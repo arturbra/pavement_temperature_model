@@ -1,8 +1,31 @@
 import pandas as pd
 import numpy as np
+import configparser
 
 
-def compute_convection_coefficients(v, T_air, T_surface):
+def load_parameters(filename="input_data/parameters.ini"):
+    """ Load all parameters from the ini file and override values with calibrated parameters if they exist. """
+    config = configparser.ConfigParser()
+    config.read(filename)
+
+    def parse_section(section):
+        return {k: float(v) for k, v in config[section].items()}
+
+    # Load all parameters normally
+    params = {section: parse_section(section) for section in config.sections()}
+
+    # Override with calibrated parameters
+    if "calibration" in params:
+        for key, value in params["calibration"].items():
+            # Find if the key originally exists in another section and replace it
+            for section in params:
+                if key in params[section] and section != "calibration":
+                    params[section][key] = value  # Override original value
+
+    return params
+
+
+def compute_convection_coefficients(h_forced, rho_air, cp_air, g, beta, L, nu_air, Pr, k_air, Lv, v, T_air, T_surface):
     """
     Compute the forced (C_fc) and natural (C_nc) convection coefficients for a single timestep
     based on input meteorological conditions.
@@ -16,17 +39,6 @@ def compute_convection_coefficients(v, T_air, T_surface):
         tuple: (C_fc, C_nc) - Forced and natural convection coefficients.
     """
 
-    # Constants
-    rho_air = 1.225  # kg/m³ (air density)
-    cp_air = 1005  # J/(kg·K) (specific heat of air at constant pressure)
-    Lv = 2.5e6  # J/kg (latent heat of vaporization of water)
-    g = 9.81  # m/s² (gravitational acceleration)
-    beta = 1 / 300  # K⁻¹ (thermal expansion coefficient for air)
-    nu_air = 1.5e-5  # m²/s (kinematic viscosity of air)
-    Pr = 0.71  # Prandtl number for air
-    k_air = 0.025  # W/(m·K) (thermal conductivity of air)
-    L = 1.0  # m (characteristic length for pavement surface)
-
     # Ensure wind speed is not zero to avoid division errors
     v_eff = max(v, 0.1)  # Default to 0.1 m/s if v is zero or negative
 
@@ -35,7 +47,6 @@ def compute_convection_coefficients(v, T_air, T_surface):
     T_surface_K = T_surface + 273.15
 
     # Compute forced convection coefficient (C_fc)
-    h_forced = 3
     C_fc = h_forced / (rho_air * cp_air * v_eff)
 
     # Compute virtual temperature difference
@@ -159,7 +170,7 @@ def calculate_specific_humidity(e, P=101325):
 # Main Simulation Function
 # ============================
 
-def model_pavement_temperature(sim_df, params):
+def model_pavement_temperature(sim_df, parameters_file):
     """
     Run the pavement temperature simulation using the new energy balance:
        h_net = h_rad - h_evap - h_conv - h_r0
@@ -183,21 +194,71 @@ def model_pavement_temperature(sim_df, params):
 
     Other fixed parameters and spatial discretization remain as in the original function.
     """
-    reflectivity = params[0]
-    emissivity = params[1]
-    f_lam_layer1 = params[2]
+
+    parameters = load_parameters(parameters_file)
+
+    # Convection parameters:
+    rho_air = parameters['convection']['rho_air']
+    cp_air = parameters['convection']['cp_air']
+    Lv = parameters['convection']["lv"]
+    g = parameters['convection']["g"]
+    beta = parameters['convection']["beta"]
+    nu_air = parameters['convection']["nu_air"]
+    Pr = parameters['convection']["pr"]
+    k_air = parameters['convection']["k_air"]
+    L = parameters['convection']["l"]
+    h_forced = parameters['convection']["h_forced"]
+
+    # Pavement parameters:
+    phi = parameters['pavement']['phi']
+    total_depth = parameters['pavement']['total_depth']
+    dx = parameters['pavement']['dx']
+    layer1_end = parameters['pavement']['layer1_end']
+    layer2_thickness = parameters['pavement']['layer2_thickness']
+    layer3_thickness = parameters['pavement']['layer3_thickness']
+
+    # Surface layer:
+    l1_rho_s = parameters['layer1']['rho_s']
+    l1_c_s = parameters['layer1']['c_s']
+    l1_lam_s = parameters['layer1']['lam_s']
+    l1_rho_f = parameters['layer1']['rho_f']
+    l1_c_f = parameters['layer1']['c_f']
+    l1_lam_f = parameters['layer1']['lam_f']
+
+    # Leveling layer:
+    l2_rho = parameters['layer2']['rho']
+    l2_c = parameters['layer2']['c']
+    l2_lam = parameters['layer2']['lam']
+
+    # Base layer:
+    l3_rho = parameters['layer3']['rho']
+    l3_c = parameters['layer3']['c']
+    l3_lam = parameters['layer3']['lam']
+
+    # Sub-base layer
+    l4_rho = parameters['layer4']['rho']
+    l4_c = parameters['layer4']['c']
+    l4_lam = parameters['layer4']['lam']
+
+    # General
+    dt = parameters['general']['dt']
+    P = parameters['general']['p']
+    CSh = parameters['general']['csh']
+    sigma_const = parameters['general']['sigma_const']
+    initial_temperature = parameters['general']['initial_temperature']
+    L_latent = parameters['general']['l_latent']
+
+    reflectivity = parameters['calibration']['reflectivity']
+    emissivity = parameters['calibration']['emissivity']
+    f_lam_layer1 = parameters['calibration']['f_lam_layer1']
 
     # Fixed parameters for conduction and layer properties
-    phi = 0.4  # Porosity for Layer 1
-    total_depth = 0.3  # m
-    dx = 0.05  # m (spatial resolution)
     N = int(np.ceil(total_depth / dx)) + 1
     x = np.linspace(0, total_depth, N)
 
     # Define layer boundaries (in m)
-    layer1_end = 0.05  # Layer 1: Permeable surface
-    layer2_end = layer1_end + 0.02  # Layer 2: Leveling layer
-    layer3_end = layer2_end + 0.12  # Layer 3: Base layer
+    layer2_end = layer1_end + layer2_thickness
+    layer3_end = layer2_end + layer3_thickness  # Layer 3: Base layer
     layer4_end = total_depth  # Layer 4: Soil bedding
 
     # Initialize arrays for density (rho), specific heat (c), and conductivity (lam)
@@ -208,19 +269,11 @@ def model_pavement_temperature(sim_df, params):
     for i, depth in enumerate(x):
         if depth <= layer1_end:
             # --- Layer 1: Permeable surface (porous) ---
-            # Solid phase properties
-            rho_s = 2000.0  # kg/m³
-            c_s = 880.0  # J/(kg·K)
-            lam_s = 0.68  # W/(m·K)
-            # Fluid phase properties (water)
-            rho_f = 1000.0  # kg/m³
-            c_f = 4186.0  # J/(kg·K)
-            lam_f = 0.6  # W/(m·K)
             # Compute effective (apparent) properties
-            volumetric_heat_capacity = (1 - phi) * (rho_s * c_s) + phi * (rho_f * c_f)
-            rho_effective = (1 - phi) * rho_s + phi * rho_f
+            volumetric_heat_capacity = (1 - phi) * (l1_rho_s * l1_c_s) + phi * (l1_rho_f * l1_c_f)
+            rho_effective = (1 - phi) * l1_rho_s + phi * l1_rho_f
             c_effective = volumetric_heat_capacity / rho_effective
-            lam_effective = (1 - phi) * lam_s + phi * lam_f
+            lam_effective = (1 - phi) * l1_lam_s + phi * l1_lam_f
             # Apply calibrated multiplier to effective conductivity
             lam_effective *= f_lam_layer1
             rho[i] = rho_effective
@@ -228,28 +281,24 @@ def model_pavement_temperature(sim_df, params):
             lam[i] = lam_effective
         elif depth <= layer2_end:
             # --- Layer 2: Leveling layer (cement mortar) ---
-            rho[i] = 2100.0
-            c[i] = 800.0
-            lam[i] = 0.9
+            rho[i] = l2_rho
+            c[i] = l2_c
+            lam[i] = l2_lam
         elif depth <= layer3_end:
             # --- Layer 3: Base layer (gravel) ---
-            rho[i] = 1400.0
-            c[i] = 900.0
-            lam[i] = 0.55
+            rho[i] = l3_rho
+            c[i] = l3_c
+            lam[i] = l3_lam
         else:
             # --- Layer 4: Soil bedding (compacted soil) ---
-            rho[i] = 1700.0
-            c[i] = 840.0
-            lam[i] = 1.78
+            rho[i] = l4_rho
+            c[i] = l4_c
+            lam[i] = l4_lam
 
-    # Time integration parameters and constants
-    dt = 600  # s (5-minute time step)
     n_steps = len(sim_df)
-    sigma_const = 5.67e-8  # Stefan-Boltzmann constant (W/(m²·K⁴))
-    L_latent = 2.45e6  # Latent heat of vaporization (J/kg)
 
     # Initialize temperature field (°C)
-    T = np.ones(N) * 40.0
+    T = np.ones(N) * initial_temperature
 
     # Initialize a dictionary to store all terms per time step
     results = {
@@ -290,25 +339,19 @@ def model_pavement_temperature(sim_df, params):
         h_rad = calculate_h_rad(h_s, h_li, h_l0)
 
         # --- Calculate Convection and Evaporation Terms ---
-        CSh = 0.7  # Default sheltering coefficient
         u_s = calculate_u_s(CSh, v)
         # Convection coefficients (forced and natural)
-        C_fc, C_nc = compute_convection_coefficients(v, T_air, T[0])
+        C_fc, C_nc = compute_convection_coefficients(h_forced, rho_air, cp_air, g, beta, L, nu_air, Pr, k_air, Lv, v, T_air, T[0])
         # Virtual temperature difference (in Kelvin)
         delta_theta_v = T_surface_K - T_air_K
 
         # Compute specific humidity values using Tetens formula and specific humidity relation
-        P = 101325  # Pa, atmospheric pressure
         e_sat_surface = calculate_saturation_vapor_pressure(T_surface)  # Pa at surface temperature
         q_sat = calculate_specific_humidity(e_sat_surface, P)  # Saturated specific humidity
         q_a = calculate_specific_humidity(e_a, P)  # Ambient specific humidity
 
-        # Air properties for convection/evaporation calculations
-        rho_a = 1.2  # kg/m³, air density
-        c_p = 1005  # J/(kg·K), specific heat of air
-
-        h_evap = calculate_h_evap(rho_a, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
-        h_conv = calculate_h_conv(rho_a, c_p, C_fc, C_nc, u_s, delta_theta_v, T_surface, T_air)
+        h_evap = calculate_h_evap(rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
+        h_conv = calculate_h_conv(rho_air, cp_air, C_fc, C_nc, u_s, delta_theta_v, T_surface, T_air)
         h_r0 = 0  # Heat flux due to surface runoff (set to zero by default)
         # Total net heat flux at the surface
         h_net = h_rad - h_evap - h_conv - h_r0

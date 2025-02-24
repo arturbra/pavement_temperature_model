@@ -1,13 +1,58 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 import random
+import configparser
 import temperature_model
+import matplotlib.pyplot as plt
 
 from deap import base, creator, tools, algorithms
 
+
 # =============================================================================
-# 1. Read and Split the Data
+# 1. Load Parameters Dynamically
+# =============================================================================
+
+def load_calibration_parameters(filename="input_data/parameters.ini"):
+    """ Load calibration parameters and their bounds dynamically from parameters.ini """
+    config = configparser.ConfigParser()
+    config.read(filename)
+
+    params = config["calibration"]
+    param_names = []
+    param_bounds = {}
+
+    for key in params.keys():
+        if not key.endswith("_min") and not key.endswith("_max"):
+            param_names.append(key)
+            # Default values in case bounds are missing
+            default_value = float(params[key])
+            lower_bound = float(params.get(f"{key}_min", 0.1 * default_value))
+            upper_bound = float(params.get(f"{key}_max", 4.0 * default_value))
+            param_bounds[key] = (lower_bound, upper_bound)
+
+    return param_names, param_bounds
+
+
+param_names, param_bounds = load_calibration_parameters()
+
+def update_ini_file(filename, params_dict):
+    """ Update the calibration section of the parameters.ini file """
+    config = configparser.ConfigParser()
+    config.read(filename)
+
+    if "calibration" not in config:
+        config.add_section("calibration")
+
+    for key, value in params_dict.items():
+        config.set("calibration", key, str(value))
+
+    with open(filename, "w") as configfile:
+        config.write(configfile)
+
+
+
+# =============================================================================
+# 2. Read and Split the Data
 # =============================================================================
 
 df = pd.read_csv(r'input_data/input_data_PA.csv')
@@ -17,9 +62,8 @@ calib_size = int(0.4 * len(df))
 calib_df = df.iloc[:calib_size].reset_index(drop=True)
 val_df = df.iloc[calib_size:].reset_index(drop=True)
 
-
 # =============================================================================
-# 2. Define the Calibration Setup with DEAP (3 parameters)
+# 3. Define the Calibration Setup with DEAP
 # =============================================================================
 
 # We wish to maximize the Nash–Sutcliffe Efficiency (NSE)
@@ -28,20 +72,18 @@ creator.create("Individual", list, fitness=creator.FitnessMax)
 
 toolbox = base.Toolbox()
 
-# -- Calibrated dynamic parameters --
-toolbox.register("attr_reflectivity", random.uniform, 0.1, 1.0)
-toolbox.register("attr_emissivity", random.uniform, 0.1, 1.0)
+# Create attributes dynamically based on the extracted parameters
+for param_name, (low, high) in param_bounds.items():
+    toolbox.register(f"attr_{param_name}", random.uniform, low, high)
 
-# -- Material parameter for Layer 1 (f_lam_layer1) --
-toolbox.register("attr_f_lam_layer1", random.uniform, 0.1, 4.0)
-
-# The individual is composed of 4 parameters in order:
-# [reflectivity, emissivity, ER, f_lam_layer1]
-toolbox.register("individual", tools.initCycle, creator.Individual, (
-    toolbox.attr_reflectivity,
-    toolbox.attr_emissivity,
-    toolbox.attr_f_lam_layer1,
-), n=1)
+# Initialize an individual dynamically based on the extracted parameters
+toolbox.register(
+    "individual",
+    tools.initCycle,
+    creator.Individual,
+    tuple(getattr(toolbox, f"attr_{name}") for name in param_names),
+    n=1
+)
 
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
@@ -51,7 +93,7 @@ toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=0.1, indpb=0.2)
 toolbox.register("select", tools.selTournament, tournsize=3)
 
 
-# --- Enforce bounds after genetic operations ---
+# --- Enforce bounds dynamically ---
 def checkBounds(min_vals, max_vals):
     """
     Decorator to enforce bounds on an individual after a genetic operation.
@@ -59,14 +101,11 @@ def checkBounds(min_vals, max_vals):
     """
 
     def decorator(func):
-        def wrapper(*args, **kargs):
-            offspring = func(*args, **kargs)
+        def wrapper(*args, **kwargs):
+            offspring = func(*args, **kwargs)
             for child in offspring:
                 for i in range(len(child)):
-                    if child[i] < min_vals[i]:
-                        child[i] = min_vals[i]
-                    elif child[i] > max_vals[i]:
-                        child[i] = max_vals[i]
+                    child[i] = max(min(child[i], max_vals[i]), min_vals[i])
             return offspring
 
         return wrapper
@@ -74,43 +113,44 @@ def checkBounds(min_vals, max_vals):
     return decorator
 
 
-BOUND_LOW = [
-    0.1,  # reflectivity lower bound
-    0.1,  # emissivity lower bound
-    0.1  # f_lam_layer1 lower bound
-]
-
-BOUND_UP = [
-    1.0,  # reflectivity upper bound
-    1.0,  # emissivity upper bound
-    4.0  # f_lam_layer1 upper bound
-]
+BOUND_LOW = [bounds[0] for bounds in param_bounds.values()]
+BOUND_UP = [bounds[1] for bounds in param_bounds.values()]
 
 toolbox.decorate("mate", checkBounds(BOUND_LOW, BOUND_UP))
 toolbox.decorate("mutate", checkBounds(BOUND_LOW, BOUND_UP))
 
 
+# =============================================================================
+# 4. Define the Evaluation Function
+# =============================================================================
+
 def evaluate(individual):
-    params = individual
-    model_results = temperature_model.model_pavement_temperature(calib_df, params)
+    """ Evaluates the GA fitness function using NSE """
+    params_dict = dict(zip(param_names, individual))
+
+    # Update the parameters.ini file with new calibration values
+    parameters_file = "input_data/parameters.ini"
+    update_ini_file(parameters_file, params_dict)
+
+    # Run the pavement temperature model with the updated parameters
+    model_results = temperature_model.model_pavement_temperature(calib_df, parameters_file)
 
     if np.any(np.isnan(model_results['surface_temp'])) or np.any(np.isinf(model_results['surface_temp'])):
-        return (-1e6,)
+        return (-1e6,)  # Large negative penalty for invalid outputs
 
     nse = temperature_model.NSE(calib_df, model_results)
-
     return (nse,)
 
 
 toolbox.register("evaluate", evaluate)
 
 # =============================================================================
-# 3. Run the Evolutionary Algorithm
+# 5. Run the Genetic Algorithm
 # =============================================================================
 
 random.seed(41)
-pop = toolbox.population(n=50)
-NGEN = 5
+pop = toolbox.population(n=100)
+NGEN = 200
 CXPB = 0.5  # crossover probability
 MUTPB = 0.2  # mutation probability
 
@@ -121,25 +161,29 @@ result, log = algorithms.eaSimple(pop, toolbox, cxpb=CXPB, mutpb=MUTPB,
 
 # Retrieve and print the best individual
 best_ind = tools.selBest(pop, 1)[0]
+best_params = dict(zip(param_names, best_ind))
+
 print("\nBest individual:")
-print("Parameters (in order):")
-print("reflectivity, emissivity, f_lam_layer1")
-print(best_ind)
+for name, value in best_params.items():
+    print(f"{name}: {value:.5f}")
+
 print("Best NSE:", best_ind.fitness.values[0])
 
-
 # =============================================================================
-# 4. Validate the Calibrated Model
+# 6. Validate the Calibrated Model
 # =============================================================================
+params_dict = dict(zip(param_names, best_ind))
+parameters_file = "input_data/parameters.ini"
+update_ini_file(parameters_file, params_dict)
 
-modeled_calibration = temperature_model.model_pavement_temperature(calib_df, best_ind)[25:]
-modeled_validation = temperature_model.model_pavement_temperature(val_df, best_ind)[25:]
+modeled_calibration = temperature_model.model_pavement_temperature(calib_df, parameters_file)[25:]
+modeled_validation = temperature_model.model_pavement_temperature(val_df, parameters_file)[25:]
 nse_val = temperature_model.NSE(val_df, modeled_validation)
 
 print("\nValidation NSE:", nse_val)
 
 # =============================================================================
-# 5. Plot Calibration and Validation Results
+# 7. Plot Calibration and Validation Results
 # =============================================================================
 
 # Calibration period plot
