@@ -23,7 +23,7 @@ def simulate_pavement_temperature(sim_df, params):
     # Unpack calibrated parameters
     reflectivity = params[0]
     emissivity = params[1]
-    f_lam_layer1 = params[3]
+    f_lam_layer1 = params[2]
 
     # Fixed parameters
     phi = 0.4  # Fixed porosity for Layer 1
