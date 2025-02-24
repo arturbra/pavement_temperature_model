@@ -109,8 +109,8 @@ toolbox.register("evaluate", evaluate)
 # =============================================================================
 
 random.seed(41)
-pop = toolbox.population(n=100)
-NGEN = 50
+pop = toolbox.population(n=50)
+NGEN = 5
 CXPB = 0.5  # crossover probability
 MUTPB = 0.2  # mutation probability
 
@@ -132,14 +132,9 @@ print("Best NSE:", best_ind.fitness.values[0])
 # 4. Validate the Calibrated Model
 # =============================================================================
 
-sim_val = temperature_model.model_pavement_temperature(val_df, best_ind)[25:]
-obs_val = val_df['PavementTemperature'].values[25:]
-
-denom_val = np.sum((obs_val - np.mean(obs_val)) ** 2)
-if denom_val == 0:
-    nse_val = -1e6
-else:
-    nse_val = 1 - np.sum((obs_val - sim_val) ** 2) / denom_val
+modeled_calibration = temperature_model.model_pavement_temperature(calib_df, best_ind)[25:]
+modeled_validation = temperature_model.model_pavement_temperature(val_df, best_ind)[25:]
+nse_val = temperature_model.NSE(val_df, modeled_validation)
 
 print("\nValidation NSE:", nse_val)
 
@@ -151,8 +146,7 @@ print("\nValidation NSE:", nse_val)
 plt.figure(figsize=(10, 4))
 time_calib = calib_df.index
 plt.plot(time_calib[25:], calib_df['PavementTemperature'][25:], label="Observed (Calibration)")
-sim_calib = temperature_model.model_pavement_temperature(calib_df, best_ind)
-plt.plot(time_calib[25:], sim_calib[25:], label="Modeled (Calibration)")
+plt.plot(time_calib[25:], modeled_calibration['surface_temp'], label="Modeled (Calibration)")
 plt.xlabel("Time Step")
 plt.ylabel("Pavement Temperature (°C)")
 plt.title("Calibration Period")
@@ -161,9 +155,10 @@ plt.tight_layout()
 plt.show()
 
 # Validation period plot
+time_val = val_df.index
 plt.figure(figsize=(10, 4))
-plt.plot(val_df['Date'][25:], val_df['PavementTemperature'][25:], label="Observed (Validation)")
-plt.plot(val_df['Date'][25:], sim_val, label="Modeled (Validation)")
+plt.plot(time_val[25:], val_df['PavementTemperature'][25:], label="Observed (Validation)")
+plt.plot(time_val[25:], modeled_validation['surface_temp'], label="Modeled (Validation)")
 plt.xlabel("Time Step")
 plt.ylabel("Pavement Temperature (°C)")
 plt.title("Validation Period")
