@@ -48,7 +48,7 @@ def plot_simulated_observed(model_results, obs_df):
     plt.show()
 
 
-input_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Model\Process-based-Nitrogen-Model-main\pavement_temperature_model\input_data\input_data_PA.csv"
+input_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Model\Process-based-Nitrogen-Model-main\pavement_temperature_model\input_data\input_data_CP.csv"
 parameters_file = r"input_data/parameters.ini"
 sim_df = pd.read_csv(input_file)
 model_results = temperature_model.model_pavement_temperature(sim_df, parameters_file)
@@ -57,7 +57,7 @@ model_results = temperature_model.model_pavement_temperature(sim_df, parameters_
 NSE = temperature_model.NSE(sim_df, model_results)
 print(NSE)
 
-index_start = 0
+index_start = 900
 index_end = index_start + 169
 plot_simulated_observed(model_results.iloc[index_start:index_end, :], sim_df.iloc[index_start:index_end, :])
 

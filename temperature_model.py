@@ -120,7 +120,7 @@ def calculate_u_s(CSh, v):
     return CSh * v
 
 
-def calculate_h_evap(rho_a, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a):
+def calculate_h_evap(rainfall, rho_a, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a):
     """
     Calculate the evaporative heat flux.
     h_evap = ρ_a * L_v * (C_fc * u_s + C_nc * |Δθ_v|^0.33) * (q_sat - q_a)
@@ -130,7 +130,9 @@ def calculate_h_evap(rho_a, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a
     a negative value (indicating net condensation) is not feasible in this formulation.
     Therefore, the result is capped to a minimum of zero.
     """
+
     h_evap = rho_a * L_latent * (C_fc * u_s + C_nc * (abs(delta_theta_v) ** 0.33)) * (q_sat - q_a)
+
     # Cap evaporation heat flux to zero if negative.
     return max(h_evap, 0.0)
 
@@ -151,10 +153,11 @@ def calculate_saturation_vapor_pressure(T):
     """
     Calculate saturation vapor pressure using the Tetens formula.
     T is in Celsius.
-    e_sat = 0.611 * exp((17.27 * T) / (T + 237.3)) * 1000  [Pa]
+    e_sat = 6.11 * 10 ** ((7.5 * T_air) / (T_air + 237.3)) * 100 [Pa]
+    e     = 6.11 * 10 ** ((7.5 * T_dew) / (T_dew + 237.3)) * 100 [Pa]
     NEW: Converts the result to Pascals.
     """
-    return 0.611 * np.exp((17.27 * T) / (T + 237.3)) * 1000
+    return 6.112 * np.exp((17.67 * T) / (T + 243.5)) * 100  # converting from mba to Pa
 
 
 def calculate_specific_humidity(e, P=101325):
@@ -163,7 +166,7 @@ def calculate_specific_humidity(e, P=101325):
     q = 0.622 * e / (P - e)
     NEW: P is the atmospheric pressure (default 101325 Pa).
     """
-    return 0.622 * e / (P - e + 1e-6)
+    return 0.622 * e / (P - (0.378 * e))
 
 
 # ============================
@@ -216,6 +219,8 @@ def model_pavement_temperature(sim_df, parameters_file):
     layer1_end = parameters['pavement']['layer1_end']
     layer2_thickness = parameters['pavement']['layer2_thickness']
     layer3_thickness = parameters['pavement']['layer3_thickness']
+    reflectivity = parameters['pavement']['reflectivity']
+    emissivity = parameters['pavement']['emissivity']
 
     # Surface layer:
     l1_rho_s = parameters['layer1']['rho_s']
@@ -224,6 +229,7 @@ def model_pavement_temperature(sim_df, parameters_file):
     l1_rho_f = parameters['layer1']['rho_f']
     l1_c_f = parameters['layer1']['c_f']
     l1_lam_f = parameters['layer1']['lam_f']
+    f_lam_layer1 = parameters['layer1']['f_lam_layer1']
 
     # Leveling layer:
     l2_rho = parameters['layer2']['rho']
@@ -247,10 +253,6 @@ def model_pavement_temperature(sim_df, parameters_file):
     sigma_const = parameters['general']['sigma_const']
     initial_temperature = parameters['general']['initial_temperature']
     L_latent = parameters['general']['l_latent']
-
-    reflectivity = parameters['calibration']['reflectivity']
-    emissivity = parameters['calibration']['emissivity']
-    f_lam_layer1 = parameters['calibration']['f_lam_layer1']
 
     # Fixed parameters for conduction and layer properties
     N = int(np.ceil(total_depth / dx)) + 1
@@ -323,6 +325,8 @@ def model_pavement_temperature(sim_df, parameters_file):
         v = sim_df['WindSpeed'].iloc[n]  # m/s, wind speed at 10 m (u_10)
         RH = sim_df['RelativeHumidity'].iloc[n]  # relative humidity at 2m
         CR = sim_df['CloudCoverage'].iloc[n]  # total cloud coverage ratio
+        T_dew = sim_df['DewPoint'].iloc[n]  # °C dew point temperature
+        rainfall = 0
 
         # Convert temperatures to Kelvin
         T_surface = T[0]
@@ -331,10 +335,9 @@ def model_pavement_temperature(sim_df, parameters_file):
 
         # --- Calculate Radiation Terms ---
         h_s = calculate_h_s(reflectivity, I)
-
-        e_sat = calculate_saturation_vapor_pressure(T_air)  # Pa, saturation vapor pressure at T_air
-        e_a = RH * e_sat  # Pa, ambient vapor pressure
-        h_li = calculate_h_li(emissivity, sigma_const, CR, e_a, T_air_K)
+        e_s = calculate_saturation_vapor_pressure(T_air)
+        e_a = e_s * RH
+        h_li = calculate_h_li(emissivity, sigma_const, CR, e_a / 100, T_air_K)  # e_a is converted from Pa to mbar
         h_l0 = calculate_h_l0(emissivity, sigma_const, T_surface_K)
         h_rad = calculate_h_rad(h_s, h_li, h_l0)
 
@@ -346,11 +349,11 @@ def model_pavement_temperature(sim_df, parameters_file):
         delta_theta_v = T_surface_K - T_air_K
 
         # Compute specific humidity values using Tetens formula and specific humidity relation
-        e_sat_surface = calculate_saturation_vapor_pressure(T_surface)  # Pa at surface temperature
-        q_sat = calculate_specific_humidity(e_sat_surface, P)  # Saturated specific humidity
+        q_sat = calculate_specific_humidity(e_s, P)  # Saturated specific humidity
         q_a = calculate_specific_humidity(e_a, P)  # Ambient specific humidity
 
-        h_evap = calculate_h_evap(rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
+        h_evap = calculate_h_evap(rainfall, rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
+        h_evap = 0
         h_conv = calculate_h_conv(rho_air, cp_air, C_fc, C_nc, u_s, delta_theta_v, T_surface, T_air)
         h_r0 = 0  # Heat flux due to surface runoff (set to zero by default)
         # Total net heat flux at the surface
