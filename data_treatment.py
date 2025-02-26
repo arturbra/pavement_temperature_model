@@ -91,9 +91,8 @@ def open_meteo_data(OM_file):
 
 sdf_path = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Data\After_construction\Dataframes\pp_data_022.csv"
 sdf = pd.read_csv(sdf_path, parse_dates=[0], low_memory=False)
-pavement = 'CP'
+pavement = 'PC'
 T_obs = pavement_temperature_data(sdf, pavement, method="average")
-
 
 OM_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\PPPaper_3\data\open-meteo\open-meteo-29.63N98.45W308m.csv"
 OM = open_meteo_data(OM_file)

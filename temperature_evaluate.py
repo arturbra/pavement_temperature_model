@@ -48,17 +48,29 @@ def plot_simulated_observed(model_results, obs_df):
     plt.show()
 
 
-input_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Model\Process-based-Nitrogen-Model-main\pavement_temperature_model\input_data\input_data_CP.csv"
-parameters_file = r"input_data/parameters.ini"
+input_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Model\Process-based-Nitrogen-Model-main\pavement_temperature_model\input_data\input_data_PICP.csv"
+parameters_file = r"input_data/parameters_PICP.ini"
 sim_df = pd.read_csv(input_file)
 model_results = temperature_model.model_pavement_temperature(sim_df, parameters_file)
 # plot_energy_balance(model_results)
 
-NSE = temperature_model.NSE(sim_df, model_results)
-print(NSE)
+calib_size = int(0.4 * len(sim_df))
+calib_df = sim_df.iloc[:calib_size].reset_index(drop=True)
+calib_results = model_results.iloc[:calib_size].reset_index(drop=True)
 
-index_start = 900
-index_end = index_start + 169
-plot_simulated_observed(model_results.iloc[index_start:index_end, :], sim_df.iloc[index_start:index_end, :])
+val_df = sim_df.iloc[calib_size:].reset_index(drop=True)
+val_results = model_results.iloc[calib_size:].reset_index(drop=True)
+
+NSE_calib = temperature_model.NSE(calib_df, calib_results)
+NSE_valid = temperature_model.NSE(val_df, val_results)
+
+RMSE_calib = temperature_model.RMSE(calib_df, calib_results)
+RMSE_valid = temperature_model.RMSE(val_df, val_results)
+
+print(f"NSE Calibration: {NSE_calib:.2f}")
+print(f"RMSE Calibration: {RMSE_calib:.2f}")
+
+print(f"NSE Validation: {NSE_valid:.2f}")
+print(f"RMSE Validation: {RMSE_valid:.2f}")
 
 
