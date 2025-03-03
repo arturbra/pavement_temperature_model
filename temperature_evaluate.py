@@ -73,4 +73,27 @@ print(f"RMSE Calibration: {RMSE_calib:.2f}")
 print(f"NSE Validation: {NSE_valid:.2f}")
 print(f"RMSE Validation: {RMSE_valid:.2f}")
 
+#
+# Calibration period plot
+plt.figure(figsize=(10, 4))
+time_calib = calib_df.index
+plt.plot(time_calib, calib_df['PavementTemperature'], label="Observed (Calibration)")
+plt.plot(time_calib, calib_results['surface_temp'], label="Modeled (Calibration)")
+plt.xlabel("Time Step")
+plt.ylabel("Pavement Temperature (°C)")
+plt.title("Calibration Period")
+plt.legend()
+plt.tight_layout()
+plt.show()
 
+# Validation period plot
+time_val = val_df.index
+plt.figure(figsize=(10, 4))
+plt.plot(time_val, val_df['PavementTemperature'], label="Observed (Validation)")
+plt.plot(time_val, val_results['surface_temp'], label="Modeled (Validation)")
+plt.xlabel("Time Step")
+plt.ylabel("Pavement Temperature (°C)")
+plt.title("Validation Period")
+plt.legend()
+plt.tight_layout()
+plt.show()

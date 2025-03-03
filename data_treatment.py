@@ -89,14 +89,52 @@ def open_meteo_data(OM_file):
     return OM
 
 
-sdf_path = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Data\After_construction\Dataframes\pp_data_022.csv"
+# sdf_path = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Data\After_construction\Dataframes\pp_data_022.csv"
+# sdf = pd.read_csv(sdf_path, parse_dates=[0], low_memory=False)
+# pavement = 'PC'
+# T_obs = pavement_temperature_data(sdf, pavement, method="average")
+#
+# OM_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\PPPaper_3\data\open-meteo\open-meteo-29.63N98.45W308m.csv"
+# OM = open_meteo_data(OM_file)
+# merged_df = OM.merge(T_obs, on='date', how='inner')
+# merged_df.to_csv(f'input_data/input_data_{pavement}.csv', index=False)
+
+
+################
+#  Rainfall
+################
+
+sdf_path = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Data\After_construction\Dataframes\pp_data_024.csv"
 sdf = pd.read_csv(sdf_path, parse_dates=[0], low_memory=False)
-pavement = 'PC'
-T_obs = pavement_temperature_data(sdf, pavement, method="average")
 
-OM_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\PPPaper_3\data\open-meteo\open-meteo-29.63N98.45W308m.csv"
-OM = open_meteo_data(OM_file)
-merged_df = OM.merge(T_obs, on='date', how='inner')
-merged_df.to_csv(f'input_data/input_data_{pavement}.csv', index=False)
+start_dates = ["2023-08-22 15:00", "2023-10-05 04:00", "2023-10-26 08:00", "2023-11-09 18:00", "2023-12-23 22:00",
+               "2024-01-21 23:00", "2024-02-02 19:00", "2024-04-09 22:00", "2024-04-20 22:00", "2024-04-28 06:00",
+               "2024-05-13 08:00"]
+
+end_dates = ["2023-08-22 22:00", "2023-10-05 22:00", "2023-10-27 03:10", "2023-11-10 06:00", "2023-12-24 18:00",
+             "2024-01-23 10:00", "2024-02-03 10:00", "2024-04-10 06:00", "2024-04-21 15:00", "2024-04-28 20:00",
+             "2024-05-14 00:00"]
+
+rain_gauges = ['box_d_rainfall_pendant', 'box_d_rainfall_pendant', 'box_d_rainfall_pendant', 'box_d_rainfall_pendant',
+               'box_d_rainfall_pendant', 'box_da_rainfall_accum', 'box_b_rainfall_accum', 'box_da_rainfall_accum',
+               'box_b_rainfall_accum', 'box_b_rainfall_accum', 'box_b_rainfall_accum']
+
+# check event 6
+
+filtered_data = []
+
+# Iterate over the defined periods
+for start, end, gauge in zip(start_dates, end_dates, rain_gauges):
+    temp_df = sdf[(sdf['date'] >= start) & (sdf['date'] <= end)][['date', gauge]].copy()
+    temp_df.rename(columns={gauge: 'Rainfall'}, inplace=True)  # Rename column to 'Rainfall'
+    filtered_data.append(temp_df)
+
+# Concatenate all filtered data
+result_df = pd.concat(filtered_data, ignore_index=True)
+result_df.dropna(inplace=True)
+
+input_df = pd.read_csv("input_data/input_data_CP.csv")
 
 
+plt.bar(result_df['date'], result_df['Rainfall'])
+plt.show()

@@ -1,7 +1,10 @@
 import pandas as pd
 import numpy as np
 import configparser
-
+import numpy as np
+import pandas as pd
+from scipy import sparse
+from scipy.sparse.linalg import spsolve
 
 def load_parameters(filename="input_data/parameters.ini"):
     """ Load all parameters from the ini file and override values with calibrated parameters if they exist. """
@@ -170,6 +173,51 @@ def calculate_specific_humidity(e, P=101325):
 
 
 # ============================
+# Calculation of the Heat Exchange Due to the Rainfall Water
+# ============================
+
+def calculate_h_r0(dt, P, T_s0, T_dp, rho_cp_p, water_rho, water_cp, lam_surface):
+    """
+    Calculate the conductive heat flux from the pavement to the runoff water (h_ro)
+    and the resulting water temperature.
+
+    Parameters:
+        dt         : Time step duration (s)
+        P          : Rainfall depth during the time step (m)
+        T_s0       : Pavement surface temperature at the start of the rain event (K)
+        T_dp       : Dew point temperature (K)
+        rho_cp_p   : Product of density and specific heat for pavement (kg/m³ * J/(kg·K))
+        water_rho  : Density of water (kg/m³)
+        water_cp   : Specific heat capacity of water (J/(kg·K))
+        lam_surface: Surface conductivity of pavement (W/m·K)
+
+    Returns:
+        h_ro   : Conductive heat flux from pavement to runoff water (W/m²)
+        T_water: Predicted water temperature after heat exchange (K)
+    """
+    # Compute thermal diffusivity D of the pavement (m²/s)
+    D = lam_surface / rho_cp_p
+    delta = np.sqrt(4 * D * dt)
+
+    # Precipitation rate (m/s)
+    i = P / dt
+
+    # Compute (ρ c_p)_w for water
+    water_rho_cp = water_rho * water_cp
+
+    # Compute beta factor
+    beta = (delta * rho_cp_p) / (2 * P * water_rho_cp)
+
+    # Compute h_ro using the provided formulation
+    h_ro = i * water_rho_cp * (T_s0 - T_dp) * (beta / (1 + beta))
+
+    # Energy balance for the water:
+    # (P * water_rho_cp) * (T_water - T_dp) = h_ro * dt  => T_water = T_dp + (h_ro*dt)/(P*water_rho_cp)
+    T_water = T_dp + (T_s0 - T_dp) * (beta / (1 + beta))
+
+    return h_ro, T_water
+
+# ============================
 # Main Simulation Function
 # ============================
 
@@ -179,23 +227,22 @@ def model_pavement_temperature(sim_df, parameters_file):
        h_net = h_rad - h_evap - h_conv - h_r0
     with:
        h_rad = h_s + h_li - h_l0
-    Each term is computed via dedicated functions.
+
+    Uses the Crank-Nicolson scheme for unconditional stability with 1-hour time steps.
 
     Calibrated parameters (in order):
       0: reflectivity         (α_s, e.g., 0.1 to 1.0) [calibrated]
       1: emissivity           (ε, e.g., 0.1 to 1.0)   [calibrated]
       2: f_lam_layer1         (multiplier for Layer 1 conductivity, e.g., 0.1 to 4.0) [calibrated]
 
-    The function now returns a dataframe containing:
+    The function returns a dataframe containing:
       - h_s, h_li, h_l0: The radiation sub-terms
       - h_rad: Net radiation (h_s + h_li - h_l0)
       - h_evap: Evaporative heat flux
       - h_conv: Convective heat flux
-      - h_r0: Runoff heat flux (here set to zero)
+      - h_r0: Runoff heat flux
       - h_net: Total net heat flux (h_rad - h_evap - h_conv - h_r0)
       - surface_temp: The simulated surface temperature at each time step
-
-    Other fixed parameters and spatial discretization remain as in the original function.
     """
 
     parameters = load_parameters(parameters_file)
@@ -253,6 +300,8 @@ def model_pavement_temperature(sim_df, parameters_file):
     sigma_const = parameters['general']['sigma_const']
     initial_temperature = parameters['general']['initial_temperature']
     L_latent = parameters['general']['l_latent']
+    rho_water = parameters['general']['rho_water']
+    cp_water = parameters['general']['cp_water']
 
     # Fixed parameters for conduction and layer properties
     N = int(np.ceil(total_depth / dx)) + 1
@@ -297,6 +346,11 @@ def model_pavement_temperature(sim_df, parameters_file):
             c[i] = l4_c
             lam[i] = l4_lam
 
+    # Compute thermal diffusivity for each node
+    alpha = np.zeros(N)
+    for i in range(N):
+        alpha[i] = lam[i] / (rho[i] * c[i])
+
     n_steps = len(sim_df)
 
     # Initialize temperature field (°C)
@@ -312,8 +366,12 @@ def model_pavement_temperature(sim_df, parameters_file):
         'h_conv': [],
         'h_r0': [],
         'h_net': [],
-        'surface_temp': []
+        'surface_temp': [],
+        'water_temp': []
     }
+
+    rain_event_active = False
+    rain_event_start_temp = None
 
     # ============================
     # Time Integration Loop
@@ -326,8 +384,8 @@ def model_pavement_temperature(sim_df, parameters_file):
         RH = sim_df['RelativeHumidity'].iloc[n]  # relative humidity at 2m
         CR = sim_df['CloudCoverage'].iloc[n]  # total cloud coverage ratio
         T_dew = sim_df['DewPoint'].iloc[n]  # °C dew point temperature
+        # rainfall = sim_df['Precipitation'].iloc[n]  # Hourly rainfall in m
         rainfall = 0
-
         # Convert temperatures to Kelvin
         T_surface = T[0]
         T_surface_K = T_surface + 273.15
@@ -344,41 +402,94 @@ def model_pavement_temperature(sim_df, parameters_file):
         # --- Calculate Convection and Evaporation Terms ---
         u_s = calculate_u_s(CSh, v)
         # Convection coefficients (forced and natural)
-        C_fc, C_nc = compute_convection_coefficients(h_forced, rho_air, cp_air, g, beta, L, nu_air, Pr, k_air, Lv, v, T_air, T[0])
+        C_fc, C_nc = compute_convection_coefficients(h_forced, rho_air, cp_air, g, beta, L, nu_air, Pr, k_air, Lv, v,
+                                                     T_air, T[0])
         # Virtual temperature difference (in Kelvin)
         delta_theta_v = T_surface_K - T_air_K
 
-        # Compute specific humidity values using Tetens formula and specific humidity relation
-        q_sat = calculate_specific_humidity(e_s, P)  # Saturated specific humidity
-        q_a = calculate_specific_humidity(e_a, P)  # Ambient specific humidity
-
-        h_evap = calculate_h_evap(rainfall, rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
-        h_evap = 0
+        # Compute specific humidity values and convection
         h_conv = calculate_h_conv(rho_air, cp_air, C_fc, C_nc, u_s, delta_theta_v, T_surface, T_air)
-        h_r0 = 0  # Heat flux due to surface runoff (set to zero by default)
+
+        # Initialize rainfall heat exchange variables
+        h_r0 = 0
+        T_water = np.nan
+        h_evap = 0
+
+        if rainfall > 0:
+            # Start a new rain event if previous timestep was dry
+            if not rain_event_active:
+                rain_event_start_temp = T_surface_K
+                rain_event_active = True
+
+            q_sat = calculate_specific_humidity(e_s, P)  # Saturated specific humidity
+            q_a = calculate_specific_humidity(e_a, P)  # Ambient specific humidity
+            h_evap = calculate_h_evap(rainfall, rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
+
+            h_r0, T_water = calculate_h_r0(dt, rainfall, rain_event_start_temp,
+                                           T_dew + 273.15, rho[0] * c[0],
+                                           rho_water, cp_water, lam[0])
+        else:
+            rain_event_active = False
+
         # Total net heat flux at the surface
         h_net = h_rad - h_evap - h_conv - h_r0
 
         # ============================
-        # Temperature Conduction Update
+        # Crank-Nicolson Temperature Update
         # ============================
-        T_new = T.copy()
-        # Top Boundary (surface node) using h_net as the boundary flux term
-        T_new[0] = T[0] + (dt / (rho[0] * c[0])) * (
-            lam[0] * (2 * (T[1] - T[0]) + 2 * dx * (h_net / lam[0])) / (dx ** 2)
-        )
-        # Interior nodes
+
+        # Calculate time step ratio for each node
+        r = np.zeros(N)
+        for i in range(N):
+            r[i] = alpha[i] * dt / (2 * dx * dx)
+
+        # Create sparse matrices for Crank-Nicolson system
+        # A*T_new = b
+        # We need to set up the coefficients for the tridiagonal system
+
+        # Setup diagonal vectors for tridiagonal matrix
+        main_diag = np.ones(N)  # Main diagonal
+        lower_diag = np.zeros(N - 1)  # Lower diagonal
+        upper_diag = np.zeros(N - 1)  # Upper diagonal
+
+        # Setup RHS vector
+        b = np.zeros(N)
+
+        # Interior nodes (1 to N-2)
         for i in range(1, N - 1):
-            lam_ip = 0.5 * (lam[i] + lam[i + 1])
-            lam_im = 0.5 * (lam[i] + lam[i - 1])
-            T_new[i] = T[i] + (dt / (rho[i] * c[i])) * (
-                (lam_ip * (T[i + 1] - T[i]) - lam_im * (T[i] - T[i - 1])) / (dx ** 2)
-            )
-        # Bottom Boundary (Neumann condition)
-        T_new[N - 1] = T[N - 1] + (dt / (rho[N - 1] * c[N - 1])) * (
-            2 * lam[N - 1] * (T[N - 2] - T[N - 1]) / (dx ** 2)
+            # For interface between different materials, compute average properties
+            r_im = 0.5 * (r[i] + r[i - 1])  # Average r between i and i-1
+            r_ip = 0.5 * (r[i] + r[i + 1])  # Average r between i and i+1
+
+            # Coefficients for T_new (LHS)
+            main_diag[i] = 1 + r_im + r_ip
+            lower_diag[i - 1] = -r_im
+            upper_diag[i] = -r_ip
+
+            # Coefficients for T (RHS)
+            b[i] = T[i] + r_im * (T[i - 1] - T[i]) + r_ip * (T[i + 1] - T[i])
+
+        # Surface boundary (node 0) with heat flux
+        # Incorporate the heat flux boundary condition into the Crank-Nicolson scheme
+        flux_term = h_net * dx / lam[0]
+        main_diag[0] = 1 + 2 * r[0]
+        upper_diag[0] = -2 * r[0]
+        b[0] = T[0] + 2 * r[0] * (T[1] - T[0] + flux_term)
+
+        # Bottom boundary (node N-1) - Neumann boundary condition (zero flux)
+        main_diag[N - 1] = 1 + 2 * r[N - 1]
+        lower_diag[N - 2] = -2 * r[N - 1]
+        b[N - 1] = T[N - 1] + 2 * r[N - 1] * (T[N - 2] - T[N - 1])
+
+        # Create sparse matrix A
+        A = sparse.diags(
+            [lower_diag, main_diag, upper_diag],
+            [-1, 0, 1],
+            shape=(N, N)
         )
-        T = T_new.copy()
+        A = A.tocsr()
+        # Solve the system
+        T = spsolve(A, b)
         surface_temp = T[0]
 
         # Record each term and the surface temperature for this timestep
@@ -391,6 +502,7 @@ def model_pavement_temperature(sim_df, parameters_file):
         results['h_r0'].append(h_r0)
         results['h_net'].append(h_net)
         results['surface_temp'].append(surface_temp)
+        results['water_temp'].append(T_water)
 
     return pd.DataFrame(results)
 
@@ -541,3 +653,8 @@ def NSE(obs_df, modeled_df):
     modeled = modeled_df['surface_temp']
     denom = np.sum((obs - np.mean(obs)) ** 2)
     return 1 - np.sum((obs - modeled) ** 2) / denom
+
+
+def RMSE(obs_df, modeled_df):
+    return np.sqrt(np.mean((obs_df['PavementTemperature'] - modeled_df['surface_temp']) ** 2))
+

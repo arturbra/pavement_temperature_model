@@ -55,7 +55,7 @@ def update_ini_file(filename, params_dict):
 # 2. Read and Split the Data
 # =============================================================================
 
-df = pd.read_csv(r'input_data/input_data_PC.csv')
+df = pd.read_csv(r'input_data/input_data_PICP.csv')
 
 # Split into calibration (first 40%) and validation (remaining 60%)
 calib_size = int(0.4 * len(df))
