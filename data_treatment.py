@@ -88,16 +88,16 @@ def open_meteo_data(OM_file):
     OM['CloudCoverage'] = OM['CloudCoverage'] / 100
     return OM
 
-
-# sdf_path = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Data\After_construction\Dataframes\pp_data_022.csv"
-# sdf = pd.read_csv(sdf_path, parse_dates=[0], low_memory=False)
-# pavement = 'PC'
-# T_obs = pavement_temperature_data(sdf, pavement, method="average")
 #
-# OM_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\PPPaper_3\data\open-meteo\open-meteo-29.63N98.45W308m.csv"
-# OM = open_meteo_data(OM_file)
-# merged_df = OM.merge(T_obs, on='date', how='inner')
-# merged_df.to_csv(f'input_data/input_data_{pavement}.csv', index=False)
+sdf_path = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Data\After_construction\Dataframes\pp_data_022.csv"
+sdf = pd.read_csv(sdf_path, parse_dates=[0], low_memory=False)
+pavement = 'CP'
+T_obs = pavement_temperature_data(sdf, pavement, method="average")
+
+OM_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\PPPaper_3\data\open-meteo\open-meteo-29.63N98.45W308m.csv"
+OM = open_meteo_data(OM_file)
+merged_df = OM.merge(T_obs, on='date', how='inner')
+merged_df.to_csv(f'input_data/input_data_{pavement}.csv', index=False)
 
 
 ################
@@ -132,9 +132,12 @@ for start, end, gauge in zip(start_dates, end_dates, rain_gauges):
 # Concatenate all filtered data
 result_df = pd.concat(filtered_data, ignore_index=True)
 result_df.dropna(inplace=True)
+hourly_rainfall = result_df.resample("1h", on='date').sum().reset_index()
+hourly_rainfall['date'] = hourly_rainfall['date'] = hourly_rainfall['date'].dt.tz_localize('Etc/GMT+6')
+hourly_rainfall['Rainfall'] = hourly_rainfall['Rainfall'] * 25.4
+input_df = pd.read_csv("input_data/input_data_CP.csv", parse_dates=[0])
+merged_df = pd.merge(input_df, hourly_rainfall[['date', 'Rainfall']], on='date', how='left')
 
-input_df = pd.read_csv("input_data/input_data_CP.csv")
+merged_df.to_csv('input_data/input_data_CP.csv', index=False)
 
 
-plt.bar(result_df['date'], result_df['Rainfall'])
-plt.show()

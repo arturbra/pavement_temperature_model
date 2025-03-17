@@ -1,5 +1,3 @@
-import pandas as pd
-import numpy as np
 import configparser
 import numpy as np
 import pandas as pd
@@ -384,8 +382,9 @@ def model_pavement_temperature(sim_df, parameters_file):
         RH = sim_df['RelativeHumidity'].iloc[n]  # relative humidity at 2m
         CR = sim_df['CloudCoverage'].iloc[n]  # total cloud coverage ratio
         T_dew = sim_df['DewPoint'].iloc[n]  # °C dew point temperature
-        # rainfall = sim_df['Precipitation'].iloc[n]  # Hourly rainfall in m
-        rainfall = 0
+        rainfall = sim_df['Rainfall'].iloc[n]  # Hourly rainfall in mm
+        rainfall = rainfall / 1000
+        # rainfall = 0
         # Convert temperatures to Kelvin
         T_surface = T[0]
         T_surface_K = T_surface + 273.15

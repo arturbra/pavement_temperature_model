@@ -48,8 +48,8 @@ def plot_simulated_observed(model_results, obs_df):
     plt.show()
 
 
-input_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Model\Process-based-Nitrogen-Model-main\pavement_temperature_model\input_data\input_data_PICP.csv"
-parameters_file = r"input_data/parameters_PICP.ini"
+input_file = r"C:\Users\artur\OneDrive\Doutorado\UTSA\PP\Model\Process-based-Nitrogen-Model-main\pavement_temperature_model\input_data\input_data_CP.csv"
+parameters_file = r"input_data/parameters_CP.ini"
 sim_df = pd.read_csv(input_file)
 model_results = temperature_model.model_pavement_temperature(sim_df, parameters_file)
 # plot_energy_balance(model_results)
@@ -73,7 +73,7 @@ print(f"RMSE Calibration: {RMSE_calib:.2f}")
 print(f"NSE Validation: {NSE_valid:.2f}")
 print(f"RMSE Validation: {RMSE_valid:.2f}")
 
-#
+
 # Calibration period plot
 plt.figure(figsize=(10, 4))
 time_calib = calib_df.index
@@ -97,3 +97,35 @@ plt.title("Validation Period")
 plt.legend()
 plt.tight_layout()
 plt.show()
+
+
+start_dates = ["2023-08-21 15:00", "2023-10-04 04:00", "2023-10-25 08:00", "2023-11-08 18:00", "2023-12-22 22:00",
+               "2024-01-20 23:00", "2024-02-01 19:00", "2024-04-08 22:00", "2024-04-19 22:00", "2024-04-27 06:00",
+               "2024-05-12 08:00"]
+
+end_dates = ["2023-08-23 22:00", "2023-10-06 22:00", "2023-10-28 03:10", "2023-11-11 06:00", "2023-12-25 18:00",
+             "2024-01-24 10:00", "2024-02-04 10:00", "2024-04-11 06:00", "2024-04-22 15:00", "2024-04-29 20:00",
+             "2024-05-15 00:00"]
+
+combined_df = pd.concat([sim_df, model_results], axis=1)
+combined_df['date'] = pd.to_datetime(combined_df['date'])
+df_tz = combined_df['date'].dt.tz
+start_dates = pd.to_datetime(start_dates).tz_localize(df_tz)
+end_dates = pd.to_datetime(end_dates).tz_localize(df_tz)
+
+for start_date, end_date in zip(start_dates, end_dates):
+    event_data = combined_df[(combined_df['date'] >= start_date) & (combined_df['date'] <= end_date)]
+
+    fig, ax1 = plt.subplots(figsize=(10, 5))
+
+    ax1.plot(range(len(event_data)), event_data['PavementTemperature'], label='Observed')
+    ax1.plot(range(len(event_data)), event_data['surface_temp'], label='Modeled')
+    ax1.set_xlabel('Time Step')
+    ax1.set_ylabel('Temperature (degC)')
+    ax1.legend(loc='upper right')
+
+    ax2 = ax1.twinx()
+    ax2.bar(range(len(event_data)), event_data['Rainfall'], color='black', alpha=0.5, width=0.4, label="Rainfall")
+    ax2.invert_yaxis()
+
+    plt.show()
