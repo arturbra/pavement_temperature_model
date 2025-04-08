@@ -12,7 +12,7 @@ from deap import base, creator, tools, algorithms
 # 1. Load Parameters Dynamically
 # =============================================================================
 
-def load_calibration_parameters(filename="input_data/parameters.ini"):
+def load_calibration_parameters(filename="input_data/1h/parameters.ini"):
     """ Load calibration parameters and their bounds dynamically from parameters.ini """
     config = configparser.ConfigParser()
     config.read(filename)
@@ -55,8 +55,8 @@ def update_ini_file(filename, params_dict):
 # 2. Read and Split the Data
 # =============================================================================
 
-df = pd.read_csv(r'input_data/input_data_PICP.csv')
-
+df = pd.read_csv(r'input_data/1h/input_data_PICP.csv')
+df = df.dropna(subset=['PavementTemperature', 'BottomTemperature'])
 # Split into calibration (first 40%) and validation (remaining 60%)
 calib_size = int(0.4 * len(df))
 calib_df = df.iloc[:calib_size].reset_index(drop=True)
@@ -124,6 +124,36 @@ toolbox.decorate("mutate", checkBounds(BOUND_LOW, BOUND_UP))
 # 4. Define the Evaluation Function
 # =============================================================================
 
+## Evaluate function for surface temperature
+
+# def evaluate(individual):
+#     """
+#     Evaluates the GA fitness function using RMSE.
+#     Returns negative RMSE so that a lower error corresponds to a higher fitness.
+#     """
+#     # Map individual values to parameter names
+#     params_dict = dict(zip(param_names, individual))
+#
+#     # Update the parameters.ini file with new calibration values
+#     parameters_file = "input_data/1h/parameters.ini"
+#     update_ini_file(parameters_file, params_dict)
+#
+#     # Run the pavement temperature model with the updated parameters
+#     model_results = temperature_model.model_pavement_temperature(calib_df, parameters_file)
+#
+#     # Check for invalid model outputs
+#     if np.any(np.isnan(model_results['surface_temp'])) or np.any(np.isinf(model_results['surface_temp'])):
+#         return (-1e6,)  # Large negative penalty for invalid outputs
+#
+#     # Compute RMSE between observed and simulated surface temperature
+#     # Assuming calib_df['surface_temp'] holds the observations.
+#     rmse = np.sqrt(np.mean((calib_df['PavementTemperature'] - model_results['surface_temp']) ** 2))
+#
+#     # Return negative RMSE as fitness (lower RMSE is better)
+#     return (-rmse,)
+
+
+# Evaluate function for the bottom temperature
 def evaluate(individual):
     """
     Evaluates the GA fitness function using RMSE.
@@ -133,11 +163,11 @@ def evaluate(individual):
     params_dict = dict(zip(param_names, individual))
 
     # Update the parameters.ini file with new calibration values
-    parameters_file = "input_data/parameters.ini"
+    parameters_file = "input_data/1h/parameters.ini"
     update_ini_file(parameters_file, params_dict)
 
     # Run the pavement temperature model with the updated parameters
-    model_results = temperature_model.model_pavement_temperature(calib_df, parameters_file)
+    model_results, temperature = temperature_model.model_pavement_temperature_simplified(calib_df, parameters_file)
 
     # Check for invalid model outputs
     if np.any(np.isnan(model_results['surface_temp'])) or np.any(np.isinf(model_results['surface_temp'])):
@@ -145,7 +175,7 @@ def evaluate(individual):
 
     # Compute RMSE between observed and simulated surface temperature
     # Assuming calib_df['surface_temp'] holds the observations.
-    rmse = np.sqrt(np.mean((calib_df['PavementTemperature'] - model_results['surface_temp']) ** 2))
+    rmse = np.sqrt(np.mean((calib_df['BottomTemperature'] - model_results['subsurface_temp']) ** 2))
 
     # Return negative RMSE as fitness (lower RMSE is better)
     return (-rmse,)
@@ -176,45 +206,50 @@ print("\nBest individual:")
 for name, value in best_params.items():
     print(f"{name}: {value:.5f}")
 
-print("Best NSE:", best_ind.fitness.values[0])
+print("Best RMSE:", best_ind.fitness.values[0] * (-1))
 
-# =============================================================================
-# 6. Validate the Calibrated Model
-# =============================================================================
-params_dict = dict(zip(param_names, best_ind))
-parameters_file = "input_data/parameters.ini"
-update_ini_file(parameters_file, params_dict)
+import temperature_evaluate
 
-modeled_calibration = temperature_model.model_pavement_temperature(calib_df, parameters_file)[25:]
-modeled_validation = temperature_model.model_pavement_temperature(val_df, parameters_file)[25:]
-nse_val = temperature_model.NSE(val_df, modeled_validation)
 
-print("\nValidation NSE:", nse_val)
 
-# =============================================================================
-# 7. Plot Calibration and Validation Results
-# =============================================================================
 
-# Calibration period plot
-plt.figure(figsize=(10, 4))
-time_calib = calib_df.index
-plt.plot(time_calib[25:], calib_df['PavementTemperature'][25:], label="Observed (Calibration)")
-plt.plot(time_calib[25:], modeled_calibration['surface_temp'], label="Modeled (Calibration)")
-plt.xlabel("Time Step")
-plt.ylabel("Pavement Temperature (°C)")
-plt.title("Calibration Period")
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-# Validation period plot
-time_val = val_df.index
-plt.figure(figsize=(10, 4))
-plt.plot(time_val[25:], val_df['PavementTemperature'][25:], label="Observed (Validation)")
-plt.plot(time_val[25:], modeled_validation['surface_temp'], label="Modeled (Validation)")
-plt.xlabel("Time Step")
-plt.ylabel("Pavement Temperature (°C)")
-plt.title("Validation Period")
-plt.legend()
-plt.tight_layout()
-plt.show()
+# # =============================================================================
+# # 6. Validate the Calibrated Model
+# # =============================================================================
+# params_dict = dict(zip(param_names, best_ind))
+# parameters_file = "input_data/1h/parameters.ini"
+# update_ini_file(parameters_file, params_dict)
+#
+# modeled_calibration = temperature_model.model_pavement_temperature(calib_df, parameters_file)[25:]
+# modeled_validation = temperature_model.model_pavement_temperature(val_df, parameters_file)[25:]
+# nse_val = temperature_model.NSE(val_df, modeled_validation)
+#
+# print("\nValidation NSE:", nse_val)
+#
+# # =============================================================================
+# # 7. Plot Calibration and Validation Results
+# # =============================================================================
+#
+# # Calibration period plot
+# plt.figure(figsize=(10, 4))
+# time_calib = calib_df.index
+# plt.plot(time_calib[25:], calib_df['PavementTemperature'][25:], label="Observed (Calibration)")
+# plt.plot(time_calib[25:], modeled_calibration['surface_temp'], label="Modeled (Calibration)")
+# plt.xlabel("Time Step")
+# plt.ylabel("Pavement Temperature (°C)")
+# plt.title("Calibration Period")
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
+#
+# # Validation period plot
+# time_val = val_df.index
+# plt.figure(figsize=(10, 4))
+# plt.plot(time_val[25:], val_df['PavementTemperature'][25:], label="Observed (Validation)")
+# plt.plot(time_val[25:], modeled_validation['surface_temp'], label="Modeled (Validation)")
+# plt.xlabel("Time Step")
+# plt.ylabel("Pavement Temperature (°C)")
+# plt.title("Validation Period")
+# plt.legend()
+# plt.tight_layout()
+# plt.show()
