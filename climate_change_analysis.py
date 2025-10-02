@@ -103,6 +103,116 @@ REQUIRED_COLUMNS = {
 }
 
 
+COLUMN_ALIASES: Mapping[str, Sequence[str]] = {
+    "date": ("time", "datetime", "timestamp"),
+    "AirTemperature": (
+        "tas",
+        "air_temperature",
+        "temperature",
+        "temp",
+        "tair",
+        "t2m",
+    ),
+    "RelativeHumidity": ("hurs", "relativehumidity", "relative_humidity", "rh", "hur"),
+    "DewPoint": ("dewpoint", "dew_point", "td", "td2m", "dewpointtemperature"),
+    "CloudCoverage": (
+        "clt",
+        "cloudcover",
+        "cloud_coverage",
+        "cloud_fraction",
+        "cloudiness",
+        "tcc",
+    ),
+    "WindSpeed": (
+        "sfcwind",
+        "wind_speed",
+        "windspeed",
+        "wind10m",
+        "windspeed_10m",
+        "wspd",
+    ),
+    "SolarRadiation": (
+        "rsds",
+        "shortwave_radiation",
+        "solar_radiation",
+        "swdown",
+        "swd",
+        "solar",
+    ),
+    "Rainfall": (
+        "pr",
+        "precipitation",
+        "precip",
+        "rainfall",
+        "rain",
+        "rainrate",
+        "tp",
+    ),
+}
+
+
+def _harmonise_forcing_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename common CMIP/ISIMIP fields and convert units when necessary."""
+
+    df = df.copy()
+    # Map lowercase column names for robust matching
+    lower_to_original = {col.lower(): col for col in df.columns}
+    rename_map: Dict[str, str] = {}
+    alias_source: Dict[str, str] = {}
+
+    for target, aliases in COLUMN_ALIASES.items():
+        if target in df.columns:
+            alias_source[target] = target
+            continue
+        for alias in aliases:
+            original = lower_to_original.get(alias.lower())
+            if original is not None:
+                rename_map[original] = target
+                alias_source[target] = original
+                break
+
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    # Convert temperature units where necessary
+    if "AirTemperature" in df.columns:
+        temps = df["AirTemperature"].astype(float)
+        source = alias_source.get("AirTemperature", "")
+        if source.lower() == "tas" or temps.mean() > 200:
+            df["AirTemperature"] = temps - 273.15
+        elif temps.max() > 130:  # likely Fahrenheit
+            df["AirTemperature"] = (temps - 32.0) / 1.8
+
+    # Relative humidity expressed as percentage in most datasets
+    if "RelativeHumidity" in df.columns:
+        rh = df["RelativeHumidity"].astype(float)
+        source = alias_source.get("RelativeHumidity", "")
+        if source.lower() == "hurs" or rh.max() > 1.5:
+            df["RelativeHumidity"] = rh / 100.0
+
+    # Cloud coverage also frequently reported as percentage
+    if "CloudCoverage" in df.columns:
+        cc = df["CloudCoverage"].astype(float)
+        source = alias_source.get("CloudCoverage", "")
+        if source.lower() in {"clt", "tcc"} or cc.max() > 1.0:
+            df["CloudCoverage"] = (cc / 100.0).clip(0.0, 1.0)
+
+    # Wind speed is typically already in m/s; include a defensive conversion for km/h
+    if "WindSpeed" in df.columns:
+        wind = df["WindSpeed"].astype(float)
+        if wind.max() > 60.0:
+            df["WindSpeed"] = wind / 3.6
+
+    # Rainfall conversions: if sourced from CMIP "pr" (kg m-2 s-1), convert to mm/hr
+    if "Rainfall" in df.columns:
+        rain = df["Rainfall"].astype(float)
+        source = alias_source.get("Rainfall", "")
+        if source.lower() == "pr":
+            df["Rainfall"] = rain * 3600.0
+
+    return df
+
+
 def _parse_date_column(df: pd.DataFrame, column: str = "date") -> pd.Series:
     """Parse the datetime column and ensure timezone-naive UTC offsets."""
 
@@ -172,7 +282,11 @@ def _resample_to_frequency(df: pd.DataFrame, frequency: Optional[str]) -> pd.Dat
     return df
 
 
-def load_forcing_data(path: Path, frequency: Optional[str] = None) -> pd.DataFrame:
+def load_forcing_data(
+    path: Path,
+    frequency: Optional[str] = None,
+    standardised_output_path: Optional[Path] = None,
+) -> pd.DataFrame:
     """Load a forcing file (CSV/Parquet) and ensure required columns exist."""
 
     path = Path(path)
@@ -184,8 +298,15 @@ def load_forcing_data(path: Path, frequency: Optional[str] = None) -> pd.DataFra
     else:
         df = pd.read_csv(path)
 
+    df = _harmonise_forcing_columns(df)
     df = _ensure_meteorological_columns(df)
-    return _resample_to_frequency(df, frequency)
+    df = _resample_to_frequency(df, frequency)
+
+    if standardised_output_path is not None:
+        standardised_output_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(standardised_output_path, index=False)
+
+    return df
 
 
 def estimate_time_step_seconds(date_series: pd.Series) -> float:
@@ -690,6 +811,13 @@ def run_cli() -> None:
         "--output",
         help="Optional path to write scenario diagnostics as JSON",
     )
+    parser.add_argument(
+        "--standardised-output-dir",
+        help=(
+            "Directory to write harmonised forcing CSVs used by the model. "
+            "Files are saved after unit conversions and optional resampling."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -704,8 +832,25 @@ def run_cli() -> None:
 
     scenario_results: Dict[str, Dict[str, object]] = {}
 
+    standardised_dir = (
+        Path(args.standardised_output_dir)
+        if args.standardised_output_dir is not None
+        else None
+    )
+    if standardised_dir is not None:
+        standardised_dir.mkdir(parents=True, exist_ok=True)
+
     for scenario_name, filepath in forcing_sources.items():
-        forcing_df = load_forcing_data(filepath, frequency=args.frequency)
+        export_path = (
+            standardised_dir / f"{scenario_name}.csv"
+            if standardised_dir is not None
+            else None
+        )
+        forcing_df = load_forcing_data(
+            filepath,
+            frequency=args.frequency,
+            standardised_output_path=export_path,
+        )
         scenario_results.update(
             analyse_scenario(
                 forcing_df=forcing_df,
