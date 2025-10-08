@@ -4,6 +4,7 @@ import pandas as pd
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 
+
 def load_parameters(filename="input_data/parameters.ini"):
     """ Load all parameters from the ini file and override values with calibrated parameters if they exist. """
     config = configparser.ConfigParser()
@@ -226,6 +227,54 @@ def calculate_composite_properties(parameters):
     return rho_composite, c_composite, lam_composite
 
 
+def calculate_h_infiltration(dt, P_infil, T_sub_K, T_water_in_K, rho_cp_sub, water_rho, water_cp, lam_sub):
+    """
+    Calculate the conductive heat flux from the subsurface layer to the infiltrating water
+    and the resulting infiltrating water temperature.
+
+    This function follows the same 'semi-infinite' conduction approach as 'calculate_h_r0'.
+
+    Args:
+        dt            : Time step duration (s)
+        P_infil       : Infiltration depth (m) during this time step (assumed = rainfall if fully permeable)
+        T_sub_K       : Temperature of the subsurface layer in Kelvin
+        T_water_in_K  : Temperature of the water entering infiltration in Kelvin
+        rho_cp_sub    : Bulk volumetric heat capacity of the subsurface layer (rho * c)
+        water_rho     : Density of water (kg/m³)
+        water_cp      : Specific heat of water (J/(kg·K))
+        lam_sub       : Thermal conductivity of the subsurface layer (W/m·K)
+
+    Returns:
+        h_infil       : Conductive heat flux from subsurface to infiltrating water (W/m²)
+        T_water_out_K : Updated water temperature (K) after infiltration heat exchange
+    """
+
+    # If there is no infiltration or dt=0, return zeros
+    if P_infil <= 0 or dt <= 0:
+        return 0.0, T_water_in_K
+
+    # Thermal diffusivity of the subsurface
+    D_sub = lam_sub / rho_cp_sub
+    # Approx. conduction penetration depth
+    delta_sub = np.sqrt(4.0 * D_sub * dt)
+
+    # Effective infiltration "rate" in m/s
+    i = P_infil / dt
+
+    # Volumetric heat capacity of water
+    rho_cp_w = water_rho * water_cp
+
+    # The same dimensionless 'beta' parameter as in calculate_h_r0
+    beta_sub = (delta_sub * rho_cp_sub) / (2.0 * P_infil * rho_cp_w)
+
+    # Heat flux from the subsurface to the infiltrating water
+    h_infil = i * rho_cp_w * (T_sub_K - T_water_in_K) * (beta_sub / (1.0 + beta_sub))
+
+    # Updated water temperature after infiltration passes the subsurface
+    T_water_out_K = T_water_in_K + (T_sub_K - T_water_in_K) * (beta_sub / (1.0 + beta_sub))
+
+    return h_infil, T_water_out_K
+
 # ============================
 # Calculation of the Heat Exchange Due to the Rainfall Water
 # ============================
@@ -270,6 +319,90 @@ def calculate_h_r0(dt, P, T_s0, T_dp, rho_cp_p, water_rho, water_cp, lam_surface
     T_water_runoff = T_dp + (T_s0 - T_dp) * (beta / (1 + beta))
     T_water_runoff = T_water_runoff - 273.15 # Convert from K to C
     return h_ro, T_water_runoff
+
+
+def calculate_h_r0_permeable(parameters, P, T, x, T_water_outflow, lam_composite, subsurface_temp):
+    """
+    Calculate heat exchange between infiltrating water and permeable pavement layers
+    using an improved formulation that explicitly accounts for key parameters and
+    incorporates empirical adjustments, including a travel time based on Darcy's law.
+
+    Parameters:
+        dt: Time step duration (s)
+        P: Rainfall depth during the time step (m)
+        phi: Porosity of the surface layer (fraction, 0 < phi <= 1)
+        infiltration_rate: Surface infiltration rate (m/s) [volumetric flux]
+        T: Temperature profile (°C) across all nodes
+        x: Depth array for nodes (m)
+        rho: Density profile (kg/m³) across all nodes
+        c: Specific heat capacity profile (J/(kg·K)) across all nodes
+        lam: Thermal conductivity profile (W/(m·K)) across all nodes
+        T_dp: Dew point (rainwater) temperature (°C)
+        layer1_end: Depth to the end of the surface layer (m)
+        layer2_thickness: Thickness of the second layer (m)
+        pore_size: Average pore size (m); default is 0.01 m (1 cm)
+
+    Returns:
+        h_r0: Heat flux from pavement to infiltrating water (W/m²)
+        T_outflow: Water temperature at outflow (°C)
+
+    Notes:
+        - Water properties are assumed to be: density = 1000 kg/m³ and specific heat = 4186 J/(kg·K).
+        - The function uses a lumped capacitance (exponential) approach to model the water’s temperature change,
+          which is reasonable when the Biot number is small.
+        - Empirical factors (contact_factor and specific_surface) are based on spherical pore geometry
+          and may require calibration.
+        - Darcy's law is used to compute the water travel time: the actual water velocity is infiltration_rate/phi.
+    """
+    # Load parameters
+    dt = parameters['general']['dt']
+    layer1_end = parameters['pavement']['layer1_end']
+    layer2_thickness = parameters['pavement']['layer2_thickness']
+    infiltration_rate = parameters['pavement']['infiltration_rate']
+    phi = parameters['pavement']['phi']
+    pore_size = parameters['pavement']['pore_size']
+    cp_water = parameters['general']['cp_water']
+    rho_water = parameters['general']['rho_water']
+
+    # Determine the intended travel depth (e.g., reaching the bottom of the base layer)
+    intended_travel_depth = layer1_end + layer2_thickness  # m
+
+    # Using Darcy's law: actual water velocity (seepage velocity) = infiltration_rate / phi
+    water_velocity = infiltration_rate / phi  # m/s
+    travel_time = intended_travel_depth / water_velocity  # s
+
+    # If the computed travel time is longer than the simulation time step,
+    # adjust the travel depth and time to represent partial penetration.
+    if travel_time > dt:
+        intended_travel_depth = water_velocity * dt  # new travel depth based on dt
+        travel_time = dt
+    travel_depth = intended_travel_depth
+
+    # Empirical heat transfer factors:
+    # Increase in contact area with higher porosity
+    contact_factor = 1 + 2 * phi
+    specific_surface = 6 * (1 - phi) / (phi * pore_size)
+    h_transfer = lam_composite * specific_surface * contact_factor
+
+    temperature_difference = subsurface_temp - T_water_outflow
+
+    # Apply the lumped capacitance model
+    exponent = -h_transfer * travel_time / (rho_water * cp_water * travel_depth)
+    approach_factor = 1 - np.exp(exponent)
+
+    # Water temperature change (°C)
+    T_water_change = temperature_difference * approach_factor
+
+    # Final outflow water temperature (°C)
+    T_water_outflow = T_water_outflow + T_water_change
+
+    # Compute the total heat exchanged per unit area (J/m²)
+    heat_exchange = P * rho_water * cp_water * T_water_change
+
+    # Convert the heat exchange to a heat flux (W/m²)
+    h_r0 = heat_exchange / dt
+
+    return h_r0, T_water_outflow
 
 
 # ============================
@@ -422,11 +555,14 @@ def model_pavement_temperature(sim_df, parameters_file):
         'h_r0': [],
         'h_net': [],
         'surface_temp': [],
-        'water_temp': [],
+        'water_temp_surface': [],
+        'water_temp_infil': []
     }
 
     rain_event_active = False
     rain_event_start_temp = None
+    T_water_infil = np.nan
+    h_infil = 0.0
 
     # ============================
     # Time Integration Loop
@@ -480,14 +616,36 @@ def model_pavement_temperature(sim_df, parameters_file):
             q_a = calculate_specific_humidity(e_a, P)  # Ambient specific humidity
             h_evap = calculate_h_evap(rainfall, rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
 
-            h_r0, T_water_runoff = calculate_h_r0(dt, rainfall, rain_event_start_temp,
+            current_surface_temp_K = T_surface_K
+            h_r0, T_water_runoff = calculate_h_r0(dt, rainfall, current_surface_temp_K,
                                            T_dew + 273.15, rho[0] * c[0],
                                            rho_water, cp_water, lam[0])
+
+            if phi != 0:
+                infiltration_depth = rainfall
+                T_dew_K = T_dew + 273.15
+                T_sub_K = T[1:].mean() + 273.15
+                T_water_in_K = (T_water_runoff + 273.15
+                                if not np.isnan(T_water_runoff)
+                                else T_dew_K)
+
+                h_infil, T_water_infil_K = calculate_h_infiltration(
+                    dt,
+                    infiltration_depth,
+                    T_sub_K,
+                    T_water_in_K,
+                    rho[1] * c[1],  # sub-surface volumetric heat capacity
+                    rho_water,
+                    cp_water,
+                    lam[1]  # sub-surface thermal conductivity
+                )
+                T_water_infil = T_water_infil_K - 273.15
+
         else:
             rain_event_active = False
 
         # Total net heat flux at the surface
-        h_net = h_rad - h_evap - h_conv - h_r0
+        h_net = h_rad - h_evap - h_conv - h_r0 - h_infil
 
         # ============================
         # Crank-Nicolson Temperature Update
@@ -557,7 +715,8 @@ def model_pavement_temperature(sim_df, parameters_file):
         results['h_r0'].append(h_r0)
         results['h_net'].append(h_net)
         results['surface_temp'].append(surface_temp)
-        results['water_temp'].append(T_water_runoff)
+        results['water_temp_surface'].append(T_water_runoff)
+        results['water_temp_infil'].append(T_water_infil)
     results['date'] = sim_df['date']
     return pd.DataFrame(results)
 
@@ -812,7 +971,7 @@ def model_pavement_temperature_simplified(sim_df, parameters_file):
 
         # Solve for new temperature distribution
         T = spsolve(A, b)
-        surface_temp = T[1]
+        surface_temp = T[0]
 
         # --- Retrieve the composite (sub-surface) temperature ---
         # We assume that all nodes with depth > layer1_end represent the well temperature.
@@ -834,90 +993,6 @@ def model_pavement_temperature_simplified(sim_df, parameters_file):
         temperature.append(T)
 
     return pd.DataFrame(results), temperature
-
-
-def calculate_h_r0_permeable(parameters, P, T, x, T_water_outflow, lam_composite, subsurface_temp):
-    """
-    Calculate heat exchange between infiltrating water and permeable pavement layers
-    using an improved formulation that explicitly accounts for key parameters and
-    incorporates empirical adjustments, including a travel time based on Darcy's law.
-
-    Parameters:
-        dt: Time step duration (s)
-        P: Rainfall depth during the time step (m)
-        phi: Porosity of the surface layer (fraction, 0 < phi <= 1)
-        infiltration_rate: Surface infiltration rate (m/s) [volumetric flux]
-        T: Temperature profile (°C) across all nodes
-        x: Depth array for nodes (m)
-        rho: Density profile (kg/m³) across all nodes
-        c: Specific heat capacity profile (J/(kg·K)) across all nodes
-        lam: Thermal conductivity profile (W/(m·K)) across all nodes
-        T_dp: Dew point (rainwater) temperature (°C)
-        layer1_end: Depth to the end of the surface layer (m)
-        layer2_thickness: Thickness of the second layer (m)
-        pore_size: Average pore size (m); default is 0.01 m (1 cm)
-
-    Returns:
-        h_r0: Heat flux from pavement to infiltrating water (W/m²)
-        T_outflow: Water temperature at outflow (°C)
-
-    Notes:
-        - Water properties are assumed to be: density = 1000 kg/m³ and specific heat = 4186 J/(kg·K).
-        - The function uses a lumped capacitance (exponential) approach to model the water’s temperature change,
-          which is reasonable when the Biot number is small.
-        - Empirical factors (contact_factor and specific_surface) are based on spherical pore geometry
-          and may require calibration.
-        - Darcy's law is used to compute the water travel time: the actual water velocity is infiltration_rate/phi.
-    """
-    # Load parameters
-    dt = parameters['general']['dt']
-    layer1_end = parameters['pavement']['layer1_end']
-    layer2_thickness = parameters['pavement']['layer2_thickness']
-    infiltration_rate = parameters['pavement']['infiltration_rate']
-    phi = parameters['pavement']['phi']
-    pore_size = parameters['pavement']['pore_size']
-    cp_water = parameters['general']['cp_water']
-    rho_water = parameters['general']['rho_water']
-
-    # Determine the intended travel depth (e.g., reaching the bottom of the base layer)
-    intended_travel_depth = layer1_end + layer2_thickness  # m
-
-    # Using Darcy's law: actual water velocity (seepage velocity) = infiltration_rate / phi
-    water_velocity = infiltration_rate / phi  # m/s
-    travel_time = intended_travel_depth / water_velocity  # s
-
-    # If the computed travel time is longer than the simulation time step,
-    # adjust the travel depth and time to represent partial penetration.
-    if travel_time > dt:
-        intended_travel_depth = water_velocity * dt  # new travel depth based on dt
-        travel_time = dt
-    travel_depth = intended_travel_depth
-
-    # Empirical heat transfer factors:
-    # Increase in contact area with higher porosity
-    contact_factor = 1 + 2 * phi
-    specific_surface = 6 * (1 - phi) / (phi * pore_size)
-    h_transfer = lam_composite * specific_surface * contact_factor
-
-    temperature_difference = subsurface_temp - T_water_outflow
-
-    # Apply the lumped capacitance model
-    exponent = -h_transfer * travel_time / (rho_water * cp_water * travel_depth)
-    approach_factor = 1 - np.exp(exponent)
-
-    # Water temperature change (°C)
-    T_water_change = temperature_difference * approach_factor
-
-    # Final outflow water temperature (°C)
-    T_water_outflow = T_water_outflow + T_water_change
-
-    # Compute the total heat exchanged per unit area (J/m²)
-    heat_exchange = P * rho_water * cp_water * T_water_change
-
-    # Convert the heat exchange to a heat flux (W/m²)
-    h_r0 = heat_exchange / dt
-
-    return h_r0, T_water_outflow
 
 
 def NSE(obs_df, modeled_df):

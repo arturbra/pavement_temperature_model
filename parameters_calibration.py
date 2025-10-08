@@ -154,31 +154,31 @@ toolbox.decorate("mutate", checkBounds(BOUND_LOW, BOUND_UP))
 
 
 # Evaluate function for the bottom temperature
-def evaluate(individual):
-    """
-    Evaluates the GA fitness function using RMSE.
-    Returns negative RMSE so that a lower error corresponds to a higher fitness.
-    """
-    # Map individual values to parameter names
-    params_dict = dict(zip(param_names, individual))
-
-    # Update the parameters.ini file with new calibration values
-    parameters_file = "input_data/1h/parameters.ini"
-    update_ini_file(parameters_file, params_dict)
-
-    # Run the pavement temperature model with the updated parameters
-    model_results, temperature = temperature_model.model_pavement_temperature_simplified(calib_df, parameters_file)
-
-    # Check for invalid model outputs
-    if np.any(np.isnan(model_results['surface_temp'])) or np.any(np.isinf(model_results['surface_temp'])):
-        return (-1e6,)  # Large negative penalty for invalid outputs
-
-    # Compute RMSE between observed and simulated surface temperature
-    # Assuming calib_df['surface_temp'] holds the observations.
-    rmse = np.sqrt(np.mean((calib_df['BottomTemperature'] - model_results['subsurface_temp']) ** 2))
-
-    # Return negative RMSE as fitness (lower RMSE is better)
-    return (-rmse,)
+# def evaluate(individual):
+#     """
+#     Evaluates the GA fitness function using RMSE.
+#     Returns negative RMSE so that a lower error corresponds to a higher fitness.
+#     """
+#     # Map individual values to parameter names
+#     params_dict = dict(zip(param_names, individual))
+#
+#     # Update the parameters.ini file with new calibration values
+#     parameters_file = "input_data/1h/parameters.ini"
+#     update_ini_file(parameters_file, params_dict)
+#
+#     # Run the pavement temperature model with the updated parameters
+#     model_results, temperature = temperature_model.model_pavement_temperature_simplified(calib_df, parameters_file)
+#
+#     # Check for invalid model outputs
+#     if np.any(np.isnan(model_results['surface_temp'])) or np.any(np.isinf(model_results['surface_temp'])):
+#         return (-1e6,)  # Large negative penalty for invalid outputs
+#
+#     # Compute RMSE between observed and simulated surface temperature
+#     # Assuming calib_df['surface_temp'] holds the observations.
+#     rmse = np.sqrt(np.mean((calib_df['BottomTemperature'] - model_results['subsurface_temp']) ** 2))
+#
+#     # Return negative RMSE as fitness (lower RMSE is better)
+#     return (-rmse,)
 
 
 toolbox.register("evaluate", evaluate)

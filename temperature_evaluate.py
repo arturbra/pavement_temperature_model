@@ -2,6 +2,7 @@ import temperature_model
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 import matplotlib.dates as mdates
 
 
@@ -175,60 +176,312 @@ def plot_pavement_temperature(combined_df, start_date=None, end_date=None, pavem
     return fig, ax1
 
 
-# Example usage:
-# Load your data as before
-pavement = 'CP'  # You can change this to PICP, PA, PC, or PGr as needed
-input_file = rf"C:\Users\Artur\PycharmProjects\pavement_temperature_model\input_data\1h\input_data_{pavement}.csv"
-parameters_file = rf"input_data/1h/parameters_{pavement}.ini"
-sim_df = pd.read_csv(input_file)
-
-# Run your model as before
-model_results = temperature_model.model_pavement_temperature(sim_df, parameters_file)
-
-# Combine data into one DataFrame for plotting
-combined_df = pd.concat([sim_df, model_results], axis=1)
-combined_df['date'] = pd.to_datetime(combined_df['date'])
-combined_df['PavementTemperature'] = combined_df['PavementTemperature'].shift(0)
-combined_df = combined_df.dropna(subset=['surface_temp'])
-
-# Example: Plot with custom y-axis limits
-plot_pavement_temperature(
-    combined_df,
-    start_date="2023-08-04 04:00-06:00",
-    end_date="2023-08-12 00:00-06:00",
-    pavement_type=pavement,
-    y_min=27,  # Set minimum temperature on y-axis
-    y_max=65,  # Set maximum temperature on y-axis
-    save_fig=True,
-    output_path=f"pavement_temp_{pavement}_for_powerpoint.png"
-)
+def rmse(sim, obs):
+    return np.sqrt(np.mean((obs - sim) ** 2))
 
 
+def nse(sim, obs):
+    return 1 - np.sum((obs - sim) ** 2) / np.sum((obs - np.mean(obs)) ** 2)
+
+
+def evaluate_model(model_result, input_df, pavement='CP', end_date='2024-07-01 00:00:00-06:00'):
+    # Ensure datetime and sort
+    model_result['date'] = pd.to_datetime(model_result['date'])
+    input_df['date'] = pd.to_datetime(input_df['date'])
+    end_date = pd.to_datetime(end_date)
+
+    # Merge modeled and observed data
+    merged = pd.merge(model_result[['date', 'surface_temp']],
+                      input_df[['date', f'{pavement}_surface_temperature']],
+                      on='date',
+                      how='inner')
+
+    # Rename for clarity
+    merged = merged.rename(columns={
+        'surface_temp': 'modeled',
+        f'{pavement}_surface_temperature': 'observed'
+    }).dropna()
+
+    # Filter up to specified end_date
+    merged = merged[merged['date'] <= end_date]
+
+    # Check if there's enough data
+    if len(merged) < 2:
+        print("Not enough data before specified end_date.")
+        return None
+
+    # Split data
+    split_index = int(len(merged) * 0.4)
+    calibration = merged.iloc[:split_index]
+    validation = merged.iloc[split_index:]
+
+    # Compute metrics
+    calibration_rmse = rmse(calibration['modeled'].values, calibration['observed'].values)
+    calibration_nse = nse(calibration['modeled'].values, calibration['observed'].values)
+
+    validation_rmse = rmse(validation['modeled'].values, validation['observed'].values)
+    validation_nse = nse(validation['modeled'].values, validation['observed'].values)
+
+    # Print results
+    print(f"Evaluation up to {end_date.strftime('%Y-%m-%d %H:%M:%S')}:")
+    print("Calibration Period:")
+    print(f"  RMSE: {calibration_rmse:.2f}")
+    print(f"  NSE : {calibration_nse:.2f}\n")
+
+    print("Validation Period:")
+    print(f"  RMSE: {validation_rmse:.2f}")
+    print(f"  NSE : {validation_nse:.2f}\n")
+
+    # Return metrics
+    return {
+        'calibration': {
+            'RMSE': calibration_rmse,
+            'NSE': calibration_nse
+        },
+        'validation': {
+            'RMSE': validation_rmse,
+            'NSE': validation_nse
+        }
+    }
+
+
+def generate_input_file(pavement, meteo_data, surface_temperature, rainfall, water_temperature, bottom_temperature):
+    surface_temperature = surface_temperature[['date', f'{pavement}_surface_temperature']]
+    merged_df = meteo_data.merge(surface_temperature, on='date', how='inner')
+    merged_df = merged_df.merge(rainfall, on='date', how='left')
+
+    if pavement != "CP":
+        water_temperature = water_temperature[['date', f'{pavement}_water_temperature']]
+        water_temperature.columns = ['date', 'WaterTemperature']
+        bottom_temperature = bottom_temperature[['date', f'{pavement}_bottom_temperature']]
+        bottom_temperature.columns = ['date', 'BottomTemperature']
+        merged_df = merged_df.merge(bottom_temperature, on='date', how='left')
+        merged_df = merged_df.merge(water_temperature, on='date', how='left')
+
+    return merged_df
+
+
+def plot_pavement_surface_temp(observed_data, model_results_dict, pavement, start_date, end_date, save_path=None):
+    """
+    Plot surface temperature for a given pavement type, comparing observed and modeled data.
+
+    Parameters:
+    -----------
+    observed_data : pandas.DataFrame
+        Must contain 'date' and '{pavement}_surface_temperature' column
+    model_results_dict : dict
+        Dictionary with pavement types as keys and DataFrames with 'date' and 'surface_temp' as values
+    pavement : str
+        Pavement type to plot (e.g., 'PA', 'CP', 'PICP', etc.)
+    start_date : str or datetime
+        Start of the plotting period
+    end_date : str or datetime
+        End of the plotting period
+    save_path : str, optional
+        If provided, saves the plot to this path
+
+    Returns:
+    --------
+    matplotlib.figure.Figure or None
+    """
+    # Custom colors
+    color_mapping = {
+        'CP': (0.121, 0.467, 0.706),
+        'PICP': (1.0, 0.498, 0.055),
+        'PGr': (0.173, 0.627, 0.173),
+        'PA': (0.580, 0.404, 0.741),
+        'PC': (0.839, 0.153, 0.157),
+    }
+    color = color_mapping.get(pavement, (0, 0, 0))
+
+    # Prepare datetime
+    observed_data['date'] = pd.to_datetime(observed_data['date'])
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+
+    # Filter observed data
+    temp_col = f'{pavement}_surface_temperature'
+    observed_period = observed_data[(observed_data['date'] >= start_date) &
+                                    (observed_data['date'] < end_date)].copy()
+
+    if observed_period.empty or temp_col not in observed_period.columns:
+        print(f"No observed data available for {pavement} in the selected period.")
+        return None
+
+    # Setup plot
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    # Plot observed
+    obs = observed_period[['date', temp_col]].dropna()
+    ax.plot(obs['date'], obs[temp_col], label='Observed Surface',
+            color=color, linestyle='-', linewidth=2, marker='o', markersize=3)
+
+    # Plot modeled
+    if pavement in model_results_dict:
+        model_df = model_results_dict[pavement].copy()
+        model_df['date'] = pd.to_datetime(model_df['date'])
+
+        model_period = model_df[(model_df['date'] >= start_date) & (model_df['date'] < end_date)]
+        ax.plot(model_period['date'], model_period['surface_temp'], label='Modeled Surface',
+                color=color, linestyle='--', linewidth=2)
+
+        # RMSE
+        merged = pd.merge(obs, model_period[['date', 'surface_temp']], on='date', how='inner')
+        if not merged.empty:
+            rmse = np.sqrt(((merged[temp_col] - merged['surface_temp']) ** 2).mean())
+            ax.annotate(f'RMSE: {rmse:.2f}°C',
+                        xy=(0.95, 0.05), xycoords='axes fraction',
+                        ha='right', va='bottom', fontsize=11,
+                        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.6))
+            print(f"{pavement} RMSE: {rmse:.2f}°C")
+
+    # Formatting
+    ax.set_title(f'{pavement} Surface Temperature\n{start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}')
+    ax.set_ylabel('Temperature (°C)')
+    ax.set_xlabel('Date')
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.legend(loc='upper right')
+
+    # X-axis ticks
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    days = (end_date - start_date).days
+    if days <= 2:
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=6))
+    elif days <= 7:
+        ax.xaxis.set_major_locator(mdates.DayLocator())
+        ax.xaxis.set_minor_locator(mdates.HourLocator(interval=6))
+    else:
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+
+    plt.xticks(rotation=30)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"Saved: {save_path}")
+
+    return fig
+
+surface_temperature = pd.read_csv(r'input_data\surface_temperature.csv', parse_dates=[0])
+rainfall = pd.read_csv(r'input_data\rainfall.csv', parse_dates=[0])
+water_temperature = pd.read_csv(r'input_data\water_temperature.csv', parse_dates=[0])
+meteo_data = pd.read_csv(r'input_data\meteo_data.csv', parse_dates=[0])
+bottom_temperature = pd.read_csv(r'input_data\bottom_temperature.csv', parse_dates=[0])
+
+# Store all results
+metrics_list = []
+
+# List of pavements to evaluate
+pavements = ['CP', 'PICP', 'PGr', 'PA', 'PC']
+end_date = '2024-07-01 00:00:00-06:00'
+for pavement in pavements:
+    print(f"Processing {pavement}...")
+
+    input_df = generate_input_file(
+        pavement,
+        meteo_data,
+        surface_temperature,
+        rainfall,
+        water_temperature,
+        bottom_temperature
+    )
+
+    parameters_file = rf"input_data/parameters_{pavement}.ini"
+    model_results = temperature_model.model_pavement_temperature(input_df, parameters_file)
+
+    metrics = evaluate_model(model_results, input_df, pavement, end_date=end_date)
+
+    if metrics is not None:
+        metrics_list.append({
+            'Pavement': pavement,
+            'Calibration_RMSE': metrics['calibration']['RMSE'],
+            'Calibration_NSE': metrics['calibration']['NSE'],
+            'Validation_RMSE': metrics['validation']['RMSE'],
+            'Validation_NSE': metrics['validation']['NSE']
+        })
+
+# Convert to DataFrame
+metrics_df = pd.DataFrame(metrics_list)
+metrics_df.to_csv('results/model_performance_metrics.csv', index=False, float_format='%.2f')
+
+# Optional: display it
+print(metrics_df)
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
+# # Dictionary to store model results for each pavement
+# model_results_dict = {}
 #
+# # Generate input file for this pavement
+# input_df = generate_input_file(
+#     pavement,
+#     meteo_data,
+#     surface_temperature,
+#     rainfall,
+#     water_temperature,
+#     bottom_temperature
+# )
 #
-pavement = 'CP'
-input_file = rf"C:\Users\Artur\PycharmProjects\pavement_temperature_model\input_data\input_data_{pavement}.csv"
-# parameters_file = rf"input_data/1h/parameters_{pavement}.ini"
-parameters_file = rf"input_data/parameters_{pavement}.ini"
-sim_df = pd.read_csv(input_file)
+# # Path to parameters file for this pavement
+# parameters_file = rf"input_data\parameters_{pavement}.ini"
+#
+# # Run the temperature model
+# results = temperature_model.model_pavement_temperature(input_df, parameters_file)
+#
+# # Store the results
+# model_results_dict[pavement] = results
+#
+# # Create output directory for plots
+# output_dir = "single_pavement_comparison_plots"
+# if not os.path.exists(output_dir):
+#     os.makedirs(output_dir)
+#
+# # Find the overall date range from the data
+# start_overall = surface_temperature['date'].min()
+# end_overall = surface_temperature['date'].max()
+# print(f"Data range: {start_overall} to {end_overall}")
+#
+# # Loop through the entire date range with 7-day intervals
+# current_start = start_overall
+# while current_start < end_overall:
+#     current_end = current_start + pd.Timedelta(days=7)
+#
+#     # Make sure we don't go past the end of the data
+#     if current_end > end_overall:
+#         current_end = end_overall
+#
+#     print(f"Processing period: {current_start.strftime('%Y-%m-%d')} to {current_end.strftime('%Y-%m-%d')}")
+#
+#     # Create filename for this period
+#     period_str = f"{current_start.strftime('%Y%m%d')}_to_{current_end.strftime('%Y%m%d')}"
+#     save_path = os.path.join(output_dir, f"pavement_comparison_{period_str}.png")
+#
+#     # Generate plot for this period
+#     fig = plot_pavement_surface_temp(
+#         observed_data=surface_temperature,
+#         model_results_dict=model_results_dict,
+#         pavement=pavement,
+#         start_date=current_start,
+#         end_date=current_end,
+#         save_path=os.path.join(output_dir, f"{pavement}_surface_temp_{period_str}.png")
+#     )
+#
+#     # Don't show all plots (would be too many), just save them
+#     plt.close(fig)
+#
+#     # Move to next 7-day period
+#     current_start = current_end
 
-model_results = temperature_model.model_pavement_temperature(sim_df, parameters_file)
-model_results_composite, temperature = temperature_model.model_pavement_temperature_simplified(sim_df, parameters_file)
+
+
+
+
+
+
+
+# model_results_composite, temperature = temperature_model.model_pavement_temperature_simplified(sim_df, parameters_file)
 # bottom_temperature = pd.DataFrame({'date':sim_df['date'], 'bottom_temperature_modeled':model_results_composite['subsurface_temp'], 'bottom_temperature_observed': sim_df['BottomTemperature']})
 # bottom_temperature['date'] = pd.to_datetime(bottom_temperature['date'])
 #
@@ -326,66 +579,3 @@ model_results_composite, temperature = temperature_model.model_pavement_temperat
 # plt.tight_layout()
 # plt.show()
 #
-#
-
-# start_dates = ["2023-08-21 15:00", "2023-10-04 04:00", "2023-10-25 08:00", "2023-11-08 20:00", "2023-12-22 22:00",
-#                "2024-01-20 23:00", "2024-02-01 19:00", "2024-04-08 22:00", "2024-04-19 22:00", "2024-04-27 06:00",
-#                "2024-05-12 08:00"]
-#
-# end_dates = ["2023-08-23 22:00", "2023-10-06 22:00", "2023-10-28 03:10", "2023-11-11 06:00", "2023-12-25 18:00",
-#              "2024-01-24 10:00", "2024-02-04 10:00", "2024-04-11 06:00", "2024-04-22 15:00", "2024-04-29 20:00",
-#              "2024-05-15 00:00"]
-
-start_dates = ["2023-11-09 10:00"]
-
-end_dates = ["2023-11-10 05:00"]
-
-combined_df = pd.concat([sim_df, model_results], axis=1)
-combined_df['date'] = pd.to_datetime(combined_df['date'])
-combined_df['surface_temp'] = combined_df['surface_temp'].shift(-1)
-
-
-df_tz = combined_df['date'].dt.tz
-start_dates = pd.to_datetime(start_dates).tz_localize(df_tz)
-end_dates = pd.to_datetime(end_dates).tz_localize(df_tz)
-
-plt.rcParams.update({'font.size': 14})
-
-for start_date, end_date in zip(start_dates, end_dates):
-    event_data = combined_df[(combined_df['date'] >= start_date) & (combined_df['date'] <= end_date)]
-
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-
-    # Surface temperatures
-    ax1.plot(event_data['date'], event_data['PavementTemperature'], label='Observed',
-             linewidth=2, color='#ff7f0e')
-    ax1.plot(event_data['date'], event_data['surface_temp'], label='Modeled',
-             linewidth=2, color='#1f77b4', linestyle='dashed')
-    ax1.set_ylabel('Surface Temperature (°C)', fontsize=14)
-    ax1.tick_params(axis='both', which='major', labelsize=14)
-    ax1.grid(True, linestyle='--', alpha=0.7)
-
-    # Rainfall bars
-    ax2 = ax1.twinx()
-    ax2.bar(event_data['date'], event_data['Rainfall'],
-            color='black', alpha=1, width=0.003, label="Rainfall")  # wider bar width
-    ax2.set_ylim(4, 0)  # Inverted
-    ax2.set_ylabel('Rainfall (in.)', fontsize=14)
-    # Format x-axis as MM/DD/YYYY HH:mm
-    ax1.xaxis.set_major_locator(mdates.HourLocator(interval=4))
-    ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d/%Y %H:%M'))
-    fig.autofmt_xdate()
-
-    # Combine legends
-    lines_1, labels_1 = ax1.get_legend_handles_labels()
-    lines_2, labels_2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines_1 + lines_2, labels_1 + labels_2,
-               fontsize=12, loc='upper right', bbox_to_anchor=(1, 0.85),
-               frameon=True, facecolor='white', edgecolor='gray')
-    # Title
-    ax1.set_title('Conventional Pavement Surface Temperature and Rainfall', fontsize=16, fontweight='bold')
-
-    plt.tight_layout()
-    plt.savefig("rainfall_temperature_cp.png", dpi=300, bbox_inches='tight')
-
-    plt.show()
