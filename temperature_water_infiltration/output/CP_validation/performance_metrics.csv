@@ -1,0 +1,5 @@
+variable,n_points,nse,rmse,mae,r2,bias,percent_bias,obs_mean,obs_std,mod_mean,mod_std,obs_min,obs_max,mod_min,mod_max
+Surface Temperature,91224,0.9487276372756848,2.606817203277655,1.8493665643118515,0.9494627161595083,0.30948583542112545,1.0671203967928558,29.001960449004645,11.51248064065903,29.31144628442577,11.177260512320695,-2.04,57.49,-4.490366757537701,53.923337300635524
+Bottom Temperature,0,,,,,,,,,,,,,,
+Water Temperature (Infiltrated),0,,,,,,,,,,,,,,
+Water Temperature (Surface),0,,,,,,,,,,,,,,

@@ -1,0 +1,126 @@
+================================================================================
+PA PAVEMENT VALIDATION REPORT
+Integrated Temperature and Water Infiltration Model
+================================================================================
+
+Generated: 2025-12-02 19:28:17
+
+Data Period: 2023-05-15 16:40:00-06:00 to 2024-07-24 14:35:00-06:00
+Number of Timesteps: 103990
+Timestep: 5 minutes (300 seconds)
+
+--------------------------------------------------------------------------------
+DATA AVAILABILITY
+--------------------------------------------------------------------------------
+PavementTemperature: 84744 / 103990 (81.5%)
+BottomTemperature:   58186 / 103990 (56.0%)
+WaterTemperature:    3033 / 103990 (2.9%)
+
+--------------------------------------------------------------------------------
+PERFORMANCE METRICS
+--------------------------------------------------------------------------------
+
+Surface Temperature:
+  Number of points: 84744
+  NSE:              0.9386
+  RMSE:             2.6576 °C
+  MAE:              1.9569 °C
+  R²:               0.9498
+  Bias:             -0.8740 °C
+  Percent Bias:     -3.17 %
+
+  Observed Statistics:
+    Mean: 27.57 °C
+    Std:  10.73 °C
+    Min:  -1.20 °C
+    Max:  51.44 °C
+
+  Modeled Statistics:
+    Mean: 26.70 °C
+    Std:  11.17 °C
+    Min:  -7.23 °C
+    Max:  52.18 °C
+
+Bottom Temperature:
+  Number of points: 58186
+  NSE:              0.6608
+  RMSE:             3.5519 °C
+  MAE:              3.0184 °C
+  R²:               0.8891
+  Bias:             1.8362 °C
+  Percent Bias:     7.05 %
+
+  Observed Statistics:
+    Mean: 26.06 °C
+    Std:  6.10 °C
+    Min:  8.38 °C
+    Max:  42.93 °C
+
+  Modeled Statistics:
+    Mean: 27.89 °C
+    Std:  8.01 °C
+    Min:  1.87 °C
+    Max:  38.95 °C
+
+Water Temperature (Infiltrated):
+  Number of points: 3033
+  NSE:              0.7052
+  RMSE:             3.3188 °C
+  MAE:              2.5135 °C
+  R²:               0.9268
+  Bias:             -1.5509 °C
+  Percent Bias:     -9.50 %
+
+  Observed Statistics:
+    Mean: 16.33 °C
+    Std:  6.11 °C
+    Min:  8.38 °C
+    Max:  31.47 °C
+
+  Modeled Statistics:
+    Mean: 14.78 °C
+    Std:  8.31 °C
+    Min:  3.93 °C
+    Max:  32.06 °C
+
+Water Temperature (Surface):
+  Number of points: 544
+  NSE:              0.3377
+  RMSE:             5.1273 °C
+  MAE:              4.2981 °C
+  R²:               0.6006
+  Bias:             -2.3977 °C
+  Percent Bias:     -14.15 %
+
+  Observed Statistics:
+    Mean: 16.95 °C
+    Std:  6.30 °C
+    Min:  8.40 °C
+    Max:  31.47 °C
+
+  Modeled Statistics:
+    Mean: 14.55 °C
+    Std:  7.05 °C
+    Min:  1.28 °C
+    Max:  36.86 °C
+
+--------------------------------------------------------------------------------
+MODEL INTERPRETATION
+--------------------------------------------------------------------------------
+
+NSE (Nash-Sutcliffe Efficiency):
+  NSE = 1:    Perfect match
+  NSE > 0.75: Very good
+  NSE > 0.65: Good
+  NSE > 0.50: Satisfactory
+  NSE < 0.50: Unsatisfactory
+
+R² (Coefficient of Determination):
+  R² = 1:    Perfect correlation
+  R² > 0.85: Very strong correlation
+  R² > 0.70: Strong correlation
+  R² > 0.50: Moderate correlation
+
+================================================================================
+END OF REPORT
+================================================================================

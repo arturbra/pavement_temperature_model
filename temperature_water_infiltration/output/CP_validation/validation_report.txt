@@ -1,0 +1,63 @@
+================================================================================
+PA PAVEMENT VALIDATION REPORT
+Integrated Temperature and Water Infiltration Model
+================================================================================
+
+Generated: 2025-12-02 19:30:32
+
+Data Period: 2023-05-15 16:40:00-06:00 to 2024-07-24 14:35:00-06:00
+Number of Timesteps: 103850
+Timestep: 5 minutes (300 seconds)
+
+--------------------------------------------------------------------------------
+DATA AVAILABILITY
+--------------------------------------------------------------------------------
+PavementTemperature: 91224 / 103850 (87.8%)
+BottomTemperature:   0 / 103850 (0.0%)
+WaterTemperature:    0 / 103850 (0.0%)
+
+--------------------------------------------------------------------------------
+PERFORMANCE METRICS
+--------------------------------------------------------------------------------
+
+Surface Temperature:
+  Number of points: 91224
+  NSE:              0.9487
+  RMSE:             2.6068 °C
+  MAE:              1.8494 °C
+  R²:               0.9495
+  Bias:             0.3095 °C
+  Percent Bias:     1.07 %
+
+  Observed Statistics:
+    Mean: 29.00 °C
+    Std:  11.51 °C
+    Min:  -2.04 °C
+    Max:  57.49 °C
+
+  Modeled Statistics:
+    Mean: 29.31 °C
+    Std:  11.18 °C
+    Min:  -4.49 °C
+    Max:  53.92 °C
+
+--------------------------------------------------------------------------------
+MODEL INTERPRETATION
+--------------------------------------------------------------------------------
+
+NSE (Nash-Sutcliffe Efficiency):
+  NSE = 1:    Perfect match
+  NSE > 0.75: Very good
+  NSE > 0.65: Good
+  NSE > 0.50: Satisfactory
+  NSE < 0.50: Unsatisfactory
+
+R² (Coefficient of Determination):
+  R² = 1:    Perfect correlation
+  R² > 0.85: Very strong correlation
+  R² > 0.70: Strong correlation
+  R² > 0.50: Moderate correlation
+
+================================================================================
+END OF REPORT
+================================================================================

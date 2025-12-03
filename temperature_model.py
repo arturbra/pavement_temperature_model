@@ -4,6 +4,8 @@ import pandas as pd
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 
+from explore_longwave_radiation import calculate_longwave_radiation_new_method
+
 
 def load_parameters(filename="input_data/parameters.ini"):
     """ Load all parameters from the ini file and override values with calibrated parameters if they exist. """
@@ -25,7 +27,6 @@ def load_parameters(filename="input_data/parameters.ini"):
                     params[section][key] = value  # Override original value
 
     return params
-
 
 def compute_convection_coefficients(h_forced, rho_air, cp_air, g, beta, L, nu_air, Pr, k_air, Lv, v, T_air, T_surface):
     """
@@ -73,7 +74,6 @@ def compute_convection_coefficients(h_forced, rho_air, cp_air, g, beta, L, nu_ai
 
     return C_fc, C_nc
 
-
 def calculate_h_s(reflectivity, I):
     """
     Calculate net solar radiation.
@@ -82,15 +82,40 @@ def calculate_h_s(reflectivity, I):
     """
     return (1 - reflectivity) * I
 
-
 def calculate_h_li(emissivity, sigma_const, CR, e_a, T_air_K):
     """
     Calculate incoming longwave radiation.
     h_li = ε * σ * (CR + 0.67*(1-CR) * e_a^(0.08)) * T_air_K^4
-    NEW: CR is the cloud cover ratio, e_a is ambient vapor pressure.
+    CR is the cloud cover ratio, e_a is ambient vapor pressure.
     """
     return emissivity * sigma_const * (CR + 0.67 * (1 - CR) * (e_a ** 0.08)) * (T_air_K ** 4)
 
+
+# def calculate_h_li(emissivity, sigma_const, TOA, e_a, T_air_K, I):
+#     e_a = e_a / 1000 # Convert from Pa to kPa
+#     emissivity_clear_sky = 1.24 * ((e_a / T_air_K) ** (1 / 7))
+#
+#     z = 302.7  # site elevation (m)
+#     Ra = TOA
+#     Rso = (0.75 + ((2 * 10 ** (-5)) * z)) * Ra
+#     Rs = I
+#
+#     tiny = 1e-6
+#     kt = np.where(Rso > tiny, Rs / np.maximum(Rso, tiny), 0.0)
+#     kt = np.clip(kt, 0.0, 1.0)
+#
+#     emissivity_sky = emissivity_clear_sky * (1 + 0.22 * ((1 - kt) ** 2))
+#     emissivity_sky = np.minimum(emissivity_sky, 1)
+#
+#     return emissivity * sigma_const * emissivity_sky * (T_air_K ** 4)
+
+
+def calculate_h_li_climate_change(emissivity, RLDS):
+    """
+    Calculate incoming longwave radiation for climate change model. The ISIMIP already has the Longwave radiation
+    calculated.
+    """
+    return emissivity * RLDS
 
 def calculate_h_l0(emissivity, sigma_const, T_surface_K):
     """
@@ -100,14 +125,12 @@ def calculate_h_l0(emissivity, sigma_const, T_surface_K):
     """
     return emissivity * sigma_const * (T_surface_K ** 4)
 
-
 def calculate_h_rad(h_s, h_li, h_l0):
     """
     Combine radiation terms to obtain total net radiation.
     h_rad = h_s + h_li - h_l0
     """
     return h_s + h_li - h_l0
-
 
 # ============================
 # Helper Functions for Convection and Evaporation
@@ -121,8 +144,7 @@ def calculate_u_s(CSh, v):
     """
     return CSh * v
 
-
-def calculate_h_evap(rainfall, rho_a, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a):
+def calculate_h_evap(rho_a, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a):
     """
     Calculate the evaporative heat flux.
     h_evap = ρ_a * L_v * (C_fc * u_s + C_nc * |Δθ_v|^0.33) * (q_sat - q_a)
@@ -138,14 +160,12 @@ def calculate_h_evap(rainfall, rho_a, L_latent, C_fc, C_nc, u_s, delta_theta_v, 
     # Cap evaporation heat flux to zero if negative.
     return max(h_evap, 0.0)
 
-
 def calculate_h_conv(rho_a, c_p, C_fc, C_nc, u_s, delta_theta_v, T_surface, T_air):
     """
     Calculate the convective (sensible) heat flux.
     h_conv = ρ_a * c_p * (C_fc * u_s + C_nc * |Δθ_v|^0.33) * (T_surface - T_air)
     """
     return rho_a * c_p * (C_fc * u_s + C_nc * (abs(delta_theta_v) ** 0.33)) * (T_surface - T_air)
-
 
 # ============================
 # Additional Helper Functions for Moisture Calculations
@@ -161,7 +181,6 @@ def calculate_saturation_vapor_pressure(T):
     """
     return 6.112 * np.exp((17.67 * T) / (T + 243.5)) * 100  # converting from mba to Pa
 
-
 def calculate_specific_humidity(e, P=101325):
     """
     Calculate specific humidity.
@@ -170,6 +189,14 @@ def calculate_specific_humidity(e, P=101325):
     """
     return 0.622 * e / (P - (0.378 * e))
 
+def calculate_tdew(T_air, RH):
+    """
+    Calculates the dew point temperature based on the second order fit (Equation 21 of Lawrence, 2005)
+    """
+    T_air_k = T_air + 273.15
+    RH = RH * 100
+    T_dew = T_air - ((100 - RH) / 5) * ((T_air_k / 300) ** 2) - (0.00135 * (RH - 84) ** 2) + 0.35
+    return T_dew
 
 def calculate_composite_properties(parameters):
     """
@@ -225,7 +252,6 @@ def calculate_composite_properties(parameters):
     lam_composite = 1.0 / (f2 / l2_lam + f3 / l3_lam + f4 / l4_lam)
 
     return rho_composite, c_composite, lam_composite
-
 
 def calculate_h_infiltration(dt, P_infil, T_sub_K, T_water_in_K, rho_cp_sub, water_rho, water_cp, lam_sub):
     """
@@ -320,7 +346,6 @@ def calculate_h_r0(dt, P, T_s0, T_dp, rho_cp_p, water_rho, water_cp, lam_surface
     T_water_runoff = T_water_runoff - 273.15 # Convert from K to C
     return h_ro, T_water_runoff
 
-
 def calculate_h_r0_permeable(parameters, P, T, x, T_water_outflow, lam_composite, subsurface_temp):
     """
     Calculate heat exchange between infiltrating water and permeable pavement layers
@@ -404,12 +429,11 @@ def calculate_h_r0_permeable(parameters, P, T, x, T_water_outflow, lam_composite
 
     return h_r0, T_water_outflow
 
-
 # ============================
 # Main Simulation Function
 # ============================
 
-def model_pavement_temperature(sim_df, parameters_file):
+def model_pavement_temperature(sim_df, parameters_file, climate_change=False):
     """
     Run the pavement temperature simulation using the new energy balance:
        h_net = h_rad - h_evap - h_conv - h_r0
@@ -555,6 +579,7 @@ def model_pavement_temperature(sim_df, parameters_file):
         'h_r0': [],
         'h_net': [],
         'surface_temp': [],
+        'rainfall': [],
         'water_temp_surface': [],
         'water_temp_infil': []
     }
@@ -568,14 +593,29 @@ def model_pavement_temperature(sim_df, parameters_file):
     # Time Integration Loop
     # ============================
     for n in range(n_steps):
-        # Retrieve meteorological data from sim_df
-        I = sim_df['SolarRadiation'].iloc[n]  # W/m², incident solar radiation (GHI)
-        T_air = sim_df['AirTemperature'].iloc[n]  # °C, ambient air temperature
-        v = sim_df['WindSpeed'].iloc[n]  # m/s, wind speed at 10 m (u_10)
-        RH = sim_df['RelativeHumidity'].iloc[n]  # relative humidity at 2m
-        CR = sim_df['CloudCoverage'].iloc[n]  # total cloud coverage ratio
-        T_dew = sim_df['DewPoint'].iloc[n]  # °C dew point temperature
-        rainfall = sim_df['Rainfall'].iloc[n]  # Hourly rainfall in mm
+        if climate_change:
+            I = sim_df['rsds'].iloc[n]
+            T_air = sim_df['tas'].iloc[n]
+            v = sim_df['sfcwind'].iloc[n]
+            RH = sim_df['hurs'].iloc[n] / 100
+            RLDS = sim_df['rlds'].iloc[n]
+            rainfall = sim_df['pr'].iloc[n]
+
+            # Calculate T_dew based on RH
+            T_dew = calculate_tdew(T_air, RH)
+
+        else:
+            # Retrieve meteorological data from sim_df
+            I = sim_df['SolarRadiation'].iloc[n]  # W/m², incident solar radiation (GHI)
+            T_air = sim_df['AirTemperature'].iloc[n]  # °C, ambient air temperature
+            v = sim_df['WindSpeed'].iloc[n]  # m/s, wind speed at 10 m (u_10)
+            RH = sim_df['RelativeHumidity'].iloc[n]  # relative humidity at 2m
+            CR = sim_df['CloudCoverage'].iloc[n]  # total cloud coverage ratio
+            T_dew = sim_df['DewPoint'].iloc[n]  # °C dew point temperature
+            rainfall = sim_df['Rainfall'].iloc[n]  # Hourly rainfall in mm
+            # TOA = sim_df['TOA'].iloc[n] # Terrestrial Solar Radiation
+
+
         rainfall = rainfall / 1000
         # rainfall = 0
         # Convert temperatures to Kelvin
@@ -587,7 +627,12 @@ def model_pavement_temperature(sim_df, parameters_file):
         h_s = calculate_h_s(reflectivity, I)
         e_s = calculate_saturation_vapor_pressure(T_air)
         e_a = e_s * RH
-        h_li = calculate_h_li(emissivity, sigma_const, CR, e_a / 100, T_air_K)  # e_a is converted from Pa to mbar
+
+        if climate_change:
+            h_li = calculate_h_li_climate_change(emissivity, RLDS)
+        else:
+            h_li = calculate_h_li(emissivity, sigma_const, CR, e_a / 100, T_air_K)
+
         h_l0 = calculate_h_l0(emissivity, sigma_const, T_surface_K)
         h_rad = calculate_h_rad(h_s, h_li, h_l0)
 
@@ -614,7 +659,7 @@ def model_pavement_temperature(sim_df, parameters_file):
 
             q_sat = calculate_specific_humidity(e_s, P)  # Saturated specific humidity
             q_a = calculate_specific_humidity(e_a, P)  # Ambient specific humidity
-            h_evap = calculate_h_evap(rainfall, rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
+            h_evap = calculate_h_evap(rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
 
             current_surface_temp_K = T_surface_K
             h_r0, T_water_runoff = calculate_h_r0(dt, rainfall, current_surface_temp_K,
@@ -643,6 +688,7 @@ def model_pavement_temperature(sim_df, parameters_file):
 
         else:
             rain_event_active = False
+            T_water_infil = np.nan
 
         # Total net heat flux at the surface
         h_net = h_rad - h_evap - h_conv - h_r0 - h_infil
@@ -715,6 +761,7 @@ def model_pavement_temperature(sim_df, parameters_file):
         results['h_r0'].append(h_r0)
         results['h_net'].append(h_net)
         results['surface_temp'].append(surface_temp)
+        results['rainfall'].append(rainfall)
         results['water_temp_surface'].append(T_water_runoff)
         results['water_temp_infil'].append(T_water_infil)
     results['date'] = sim_df['date']
@@ -906,7 +953,7 @@ def model_pavement_temperature_simplified(sim_df, parameters_file):
 
                 q_sat = calculate_specific_humidity(e_s, P)  # Saturated specific humidity
                 q_a = calculate_specific_humidity(e_a, P)  # Ambient specific humidity
-                h_evap = calculate_h_evap(rainfall, rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
+                h_evap = calculate_h_evap(rho_air, L_latent, C_fc, C_nc, u_s, delta_theta_v, q_sat, q_a)
 
                 h_r0, T_water_runoff = calculate_h_r0(dt, rainfall, rain_event_start_temp,
                                                T_dew + 273.15, rho[0] * c[0],
@@ -915,8 +962,6 @@ def model_pavement_temperature_simplified(sim_df, parameters_file):
                 if not rain_event_active:
                     T_water_outflow = T_dew + 273.15
                     rain_event_active = True
-
-
 
         else:
             rain_event_active = False

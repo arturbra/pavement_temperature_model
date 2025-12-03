@@ -55,7 +55,7 @@ def update_ini_file(filename, params_dict):
 # 2. Read and Split the Data
 # =============================================================================
 
-df = pd.read_csv(r'input_data/1h/input_data_PICP.csv')
+df = pd.read_csv(r'input_data/1h/input_data_PICP2.csv')
 df = df.dropna(subset=['PavementTemperature', 'BottomTemperature'])
 # Split into calibration (first 40%) and validation (remaining 60%)
 calib_size = int(0.4 * len(df))
@@ -126,31 +126,31 @@ toolbox.decorate("mutate", checkBounds(BOUND_LOW, BOUND_UP))
 
 ## Evaluate function for surface temperature
 
-# def evaluate(individual):
-#     """
-#     Evaluates the GA fitness function using RMSE.
-#     Returns negative RMSE so that a lower error corresponds to a higher fitness.
-#     """
-#     # Map individual values to parameter names
-#     params_dict = dict(zip(param_names, individual))
-#
-#     # Update the parameters.ini file with new calibration values
-#     parameters_file = "input_data/1h/parameters.ini"
-#     update_ini_file(parameters_file, params_dict)
-#
-#     # Run the pavement temperature model with the updated parameters
-#     model_results = temperature_model.model_pavement_temperature(calib_df, parameters_file)
-#
-#     # Check for invalid model outputs
-#     if np.any(np.isnan(model_results['surface_temp'])) or np.any(np.isinf(model_results['surface_temp'])):
-#         return (-1e6,)  # Large negative penalty for invalid outputs
-#
-#     # Compute RMSE between observed and simulated surface temperature
-#     # Assuming calib_df['surface_temp'] holds the observations.
-#     rmse = np.sqrt(np.mean((calib_df['PavementTemperature'] - model_results['surface_temp']) ** 2))
-#
-#     # Return negative RMSE as fitness (lower RMSE is better)
-#     return (-rmse,)
+def evaluate(individual):
+    """
+    Evaluates the GA fitness function using RMSE.
+    Returns negative RMSE so that a lower error corresponds to a higher fitness.
+    """
+    # Map individual values to parameter names
+    params_dict = dict(zip(param_names, individual))
+
+    # Update the parameters.ini file with new calibration values
+    parameters_file = "input_data/1h/parameters.ini"
+    update_ini_file(parameters_file, params_dict)
+
+    # Run the pavement temperature model with the updated parameters
+    model_results = temperature_model.model_pavement_temperature(calib_df, parameters_file)
+
+    # Check for invalid model outputs
+    if np.any(np.isnan(model_results['surface_temp'])) or np.any(np.isinf(model_results['surface_temp'])):
+        return (-1e6,)  # Large negative penalty for invalid outputs
+
+    # Compute RMSE between observed and simulated surface temperature
+    # Assuming calib_df['surface_temp'] holds the observations.
+    rmse = np.sqrt(np.mean((calib_df['PavementTemperature'] - model_results['surface_temp']) ** 2))
+
+    # Return negative RMSE as fitness (lower RMSE is better)
+    return (-rmse,)
 
 
 # Evaluate function for the bottom temperature

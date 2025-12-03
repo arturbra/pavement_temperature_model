@@ -362,50 +362,52 @@ def plot_pavement_surface_temp(observed_data, model_results_dict, pavement, star
 
     return fig
 
-surface_temperature = pd.read_csv(r'input_data\surface_temperature.csv', parse_dates=[0])
-rainfall = pd.read_csv(r'input_data\rainfall.csv', parse_dates=[0])
-water_temperature = pd.read_csv(r'input_data\water_temperature.csv', parse_dates=[0])
-meteo_data = pd.read_csv(r'input_data\meteo_data.csv', parse_dates=[0])
-bottom_temperature = pd.read_csv(r'input_data\bottom_temperature.csv', parse_dates=[0])
 
-# Store all results
-metrics_list = []
+if __name__ == '__main__':
+    surface_temperature = pd.read_csv(r'input_data\surface_temperature.csv', parse_dates=[0])
+    rainfall = pd.read_csv(r'input_data\rainfall.csv', parse_dates=[0])
+    water_temperature = pd.read_csv(r'input_data\water_temperature.csv', parse_dates=[0])
+    meteo_data = pd.read_csv(r'input_data\open-meteo_data_5min_with_TOA.csv', parse_dates=[0])
+    bottom_temperature = pd.read_csv(r'input_data\bottom_temperature.csv', parse_dates=[0])
 
-# List of pavements to evaluate
-pavements = ['CP', 'PICP', 'PGr', 'PA', 'PC']
-end_date = '2024-07-01 00:00:00-06:00'
-for pavement in pavements:
-    print(f"Processing {pavement}...")
+    # Store all results
+    metrics_list = []
 
-    input_df = generate_input_file(
-        pavement,
-        meteo_data,
-        surface_temperature,
-        rainfall,
-        water_temperature,
-        bottom_temperature
-    )
+    # List of pavements to evaluate
+    pavements = ['CP', 'PICP', 'PGr', 'PA', 'PC']
+    end_date = '2024-07-01 00:00:00-06:00'
+    for pavement in pavements:
+        print(f"Processing {pavement}...")
 
-    parameters_file = rf"input_data/parameters_{pavement}.ini"
-    model_results = temperature_model.model_pavement_temperature(input_df, parameters_file)
+        input_df = generate_input_file(
+            pavement,
+            meteo_data,
+            surface_temperature,
+            rainfall,
+            water_temperature,
+            bottom_temperature
+        )
 
-    metrics = evaluate_model(model_results, input_df, pavement, end_date=end_date)
+        parameters_file = rf"input_data/parameters_{pavement}.ini"
+        model_results = temperature_model.model_pavement_temperature(input_df, parameters_file)
 
-    if metrics is not None:
-        metrics_list.append({
-            'Pavement': pavement,
-            'Calibration_RMSE': metrics['calibration']['RMSE'],
-            'Calibration_NSE': metrics['calibration']['NSE'],
-            'Validation_RMSE': metrics['validation']['RMSE'],
-            'Validation_NSE': metrics['validation']['NSE']
-        })
+        metrics = evaluate_model(model_results, input_df, pavement, end_date=end_date)
 
-# Convert to DataFrame
-metrics_df = pd.DataFrame(metrics_list)
-metrics_df.to_csv('results/model_performance_metrics.csv', index=False, float_format='%.2f')
+        if metrics is not None:
+            metrics_list.append({
+                'Pavement': pavement,
+                'Calibration_RMSE': metrics['calibration']['RMSE'],
+                'Calibration_NSE': metrics['calibration']['NSE'],
+                'Validation_RMSE': metrics['validation']['RMSE'],
+                'Validation_NSE': metrics['validation']['NSE']
+            })
 
-# Optional: display it
-print(metrics_df)
+    # Convert to DataFrame
+    metrics_df = pd.DataFrame(metrics_list)
+    # metrics_df.to_csv('results/model_performance_metrics.csv', index=False, float_format='%.2f')
+
+    # Optional: display it
+    print(metrics_df.to_string())
 
 
 

@@ -1,0 +1,216 @@
+================================================================================
+COMPARISON REPORT: ISIMIP DISAGGREGATED vs WFDE5 CONVERTED DATA
+================================================================================
+
+ISIMIP file: climate_change\UKESM1-0-LL\climate_change_historical.csv
+  Records: 298032
+  Date range: 1981-01-01 00:00:00+00:00 to 2014-12-31 23:00:00+00:00
+
+WFDE5 file: climate_change\UKESM1-0-LL\RAW\wfde5_isimip_historical.csv
+  Records: 359400
+  Date range: 1979-01-01 00:00:00+00:00 to 2019-12-31 23:00:00+00:00
+
+Merged records: 298032
+
+================================================================================
+STATISTICAL COMPARISON
+================================================================================
+
+
+--------------------------------------------------------------------------------
+tas - Temperature (°C)
+--------------------------------------------------------------------------------
+
+Sample size: 298,032
+Pearson correlation (R): 0.782439
+R-squared (R²): 0.612211
+P-value: 0.000000e+00
+RMSE: 5.966084 °C
+Bias (ISIMIP - WFDE5): 0.021239 °C
+
+Linear regression (ISIMIP = slope * WFDE5 + intercept):
+  Slope: 0.789878
+  Intercept: 4.278413
+
+WFDE5 statistics:
+  Mean: 20.260493 °C
+  Std dev: 9.000815 °C
+
+ISIMIP statistics:
+  Mean: 20.281732 °C
+  Std dev: 9.086389 °C
+
+Assessment: POOR agreement
+  - Slope deviates from 1:1 by 21.0%
+  - Bias is small (< 10% of std dev)
+
+--------------------------------------------------------------------------------
+hurs - Relative Humidity (%)
+--------------------------------------------------------------------------------
+
+Sample size: 298,032
+Pearson correlation (R): 0.390659
+R-squared (R²): 0.152615
+P-value: 0.000000e+00
+RMSE: 22.726480 %
+Bias (ISIMIP - WFDE5): -0.767421 %
+
+Linear regression (ISIMIP = slope * WFDE5 + intercept):
+  Slope: 0.388807
+  Intercept: 41.452720
+
+WFDE5 statistics:
+  Mean: 69.078197 %
+  Std dev: 20.623741 %
+
+ISIMIP statistics:
+  Mean: 68.310775 %
+  Std dev: 20.525940 %
+
+Assessment: POOR agreement
+  - Slope deviates from 1:1 by 61.1%
+  - Bias is small (< 10% of std dev)
+
+--------------------------------------------------------------------------------
+rsds - Shortwave Radiation (W m-2)
+--------------------------------------------------------------------------------
+
+Sample size: 298,032
+Pearson correlation (R): 0.871978
+R-squared (R²): 0.760345
+P-value: 0.000000e+00
+RMSE: 137.458929 W m-2
+Bias (ISIMIP - WFDE5): 0.202249 W m-2
+
+Linear regression (ISIMIP = slope * WFDE5 + intercept):
+  Slope: 0.872187
+  Intercept: 24.829751
+
+WFDE5 statistics:
+  Mean: 192.684486 W m-2
+  Std dev: 271.620281 W m-2
+
+ISIMIP statistics:
+  Mean: 192.886734 W m-2
+  Std dev: 271.685641 W m-2
+
+Assessment: MODERATE agreement
+  - Slope deviates from 1:1 by 12.8%
+  - Bias is small (< 10% of std dev)
+
+--------------------------------------------------------------------------------
+rlds - Longwave Radiation (W m-2)
+--------------------------------------------------------------------------------
+
+Sample size: 298,032
+Pearson correlation (R): 0.531315
+R-squared (R²): 0.282295
+P-value: 0.000000e+00
+RMSE: 56.082045 W m-2
+Bias (ISIMIP - WFDE5): -0.108418 W m-2
+
+Linear regression (ISIMIP = slope * WFDE5 + intercept):
+  Slope: 0.530916
+  Intercept: 169.809420
+
+WFDE5 statistics:
+  Mean: 362.233316 W m-2
+  Std dev: 57.946890 W m-2
+
+ISIMIP statistics:
+  Mean: 362.124898 W m-2
+  Std dev: 57.903423 W m-2
+
+Assessment: POOR agreement
+  - Slope deviates from 1:1 by 46.9%
+  - Bias is small (< 10% of std dev)
+
+--------------------------------------------------------------------------------
+ps - Surface Pressure (hPa)
+--------------------------------------------------------------------------------
+
+Sample size: 298,032
+Pearson correlation (R): 0.184648
+R-squared (R²): 0.034095
+P-value: 0.000000e+00
+RMSE: 6.801522 hPa
+Bias (ISIMIP - WFDE5): 0.001034 hPa
+
+Linear regression (ISIMIP = slope * WFDE5 + intercept):
+  Slope: 0.183376
+  Intercept: 801.001213
+
+WFDE5 statistics:
+  Mean: 980.867326 hPa
+  Std dev: 5.344587 hPa
+
+ISIMIP statistics:
+  Mean: 980.868361 hPa
+  Std dev: 5.307749 hPa
+
+Assessment: POOR agreement
+  - Slope deviates from 1:1 by 81.7%
+  - Bias is small (< 10% of std dev)
+
+--------------------------------------------------------------------------------
+sfcwind - Wind Speed (m s-1)
+--------------------------------------------------------------------------------
+
+Sample size: 298,032
+Pearson correlation (R): 0.097965
+R-squared (R²): 0.009597
+P-value: 0.000000e+00
+RMSE: 2.007066 m s-1
+Bias (ISIMIP - WFDE5): 0.002764 m s-1
+
+Linear regression (ISIMIP = slope * WFDE5 + intercept):
+  Slope: 0.098486
+  Intercept: 3.027292
+
+WFDE5 statistics:
+  Mean: 3.354943 m s-1
+  Std dev: 1.490323 m s-1
+
+ISIMIP statistics:
+  Mean: 3.357707 m s-1
+  Std dev: 1.498243 m s-1
+
+Assessment: POOR agreement
+  - Slope deviates from 1:1 by 90.2%
+  - Bias is small (< 10% of std dev)
+
+--------------------------------------------------------------------------------
+pr - Precipitation (mm h-1)
+--------------------------------------------------------------------------------
+
+Sample size: 298,032
+Pearson correlation (R): 0.001445
+R-squared (R²): 0.000002
+P-value: 4.300709e-01
+RMSE: 0.820379 mm h-1
+Bias (ISIMIP - WFDE5): -0.001604 mm h-1
+
+Linear regression (ISIMIP = slope * WFDE5 + intercept):
+  Slope: 0.001639
+  Intercept: 0.100863
+
+WFDE5 statistics:
+  Mean: 0.102635 mm h-1
+  Std dev: 0.542918 mm h-1
+
+ISIMIP statistics:
+  Mean: 0.101031 mm h-1
+  Std dev: 0.615812 mm h-1
+
+Assessment: POOR agreement
+  - Slope deviates from 1:1 by 99.8%
+  - Bias is small (< 10% of std dev)
+
+================================================================================
+SUMMARY
+================================================================================
+
+Average R² across all variables: 0.264451
+
+The TeddyTool disaggregation method shows moderate to poor agreement with the WFDE5 source data.
+Further investigation may be needed to understand the discrepancies.
