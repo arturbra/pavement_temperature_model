@@ -3,7 +3,7 @@ PA PAVEMENT VALIDATION REPORT
 Integrated Temperature and Water Infiltration Model
 ================================================================================
 
-Generated: 2025-12-02 19:28:17
+Generated: 2025-12-02 21:11:49
 
 Data Period: 2023-05-15 16:40:00-06:00 to 2024-07-24 14:35:00-06:00
 Number of Timesteps: 103990
@@ -23,9 +23,9 @@ PERFORMANCE METRICS
 Surface Temperature:
   Number of points: 84744
   NSE:              0.9386
-  RMSE:             2.6576 °C
-  MAE:              1.9569 °C
-  R²:               0.9498
+  RMSE:             2.6581 °C
+  MAE:              1.9574 °C
+  R²:               0.9497
   Bias:             -0.8740 °C
   Percent Bias:     -3.17 %
 
@@ -45,7 +45,7 @@ Bottom Temperature:
   Number of points: 58186
   NSE:              0.6608
   RMSE:             3.5519 °C
-  MAE:              3.0184 °C
+  MAE:              3.0185 °C
   R²:               0.8891
   Bias:             1.8362 °C
   Percent Bias:     7.05 %
@@ -63,33 +63,33 @@ Bottom Temperature:
     Max:  38.95 °C
 
 Water Temperature (Infiltrated):
-  Number of points: 3033
-  NSE:              0.7052
-  RMSE:             3.3188 °C
-  MAE:              2.5135 °C
-  R²:               0.9268
-  Bias:             -1.5509 °C
-  Percent Bias:     -9.50 %
+  Number of points: 2354
+  NSE:              0.7572
+  RMSE:             2.9443 °C
+  MAE:              2.0310 °C
+  R²:               0.9096
+  Bias:             -0.9173 °C
+  Percent Bias:     -5.16 %
 
   Observed Statistics:
-    Mean: 16.33 °C
-    Std:  6.11 °C
+    Mean: 17.77 °C
+    Std:  5.98 °C
     Min:  8.38 °C
     Max:  31.47 °C
 
   Modeled Statistics:
-    Mean: 14.78 °C
-    Std:  8.31 °C
-    Min:  3.93 °C
-    Max:  32.06 °C
+    Mean: 16.85 °C
+    Std:  7.84 °C
+    Min:  4.75 °C
+    Max:  31.88 °C
 
 Water Temperature (Surface):
   Number of points: 544
-  NSE:              0.3377
-  RMSE:             5.1273 °C
-  MAE:              4.2981 °C
+  NSE:              0.3378
+  RMSE:             5.1269 °C
+  MAE:              4.2978 °C
   R²:               0.6006
-  Bias:             -2.3977 °C
+  Bias:             -2.3975 °C
   Percent Bias:     -14.15 %
 
   Observed Statistics:

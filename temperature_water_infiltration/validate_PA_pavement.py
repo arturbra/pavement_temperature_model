@@ -610,6 +610,6 @@ def main(pavement):
 
 
 if __name__ == "__main__":
-    pavement = "CP"
+    pavement = "PC"
 
     main(pavement)

@@ -3,7 +3,7 @@ PA PAVEMENT VALIDATION REPORT
 Integrated Temperature and Water Infiltration Model
 ================================================================================
 
-Generated: 2025-12-02 19:27:12
+Generated: 2025-12-02 21:07:25
 
 Data Period: 2023-05-15 16:40:00-06:00 to 2024-07-24 14:35:00-06:00
 Number of Timesteps: 103990
@@ -38,13 +38,13 @@ Surface Temperature:
   Modeled Statistics:
     Mean: 29.78 °C
     Std:  12.01 °C
-    Min:  -5.80 °C
+    Min:  -5.81 °C
     Max:  57.53 °C
 
 Bottom Temperature:
   Number of points: 61407
   NSE:              0.2489
-  RMSE:             5.4279 °C
+  RMSE:             5.4280 °C
   MAE:              4.6536 °C
   R²:               0.8162
   Bias:             3.4786 °C
@@ -63,34 +63,34 @@ Bottom Temperature:
     Max:  44.95 °C
 
 Water Temperature (Infiltrated):
-  Number of points: 3117
-  NSE:              0.6027
-  RMSE:             4.0000 °C
-  MAE:              3.2807 °C
-  R²:               0.8759
-  Bias:             -1.1107 °C
-  Percent Bias:     -6.01 %
+  Number of points: 2438
+  NSE:              0.7237
+  RMSE:             3.4885 °C
+  MAE:              2.7525 °C
+  R²:               0.8764
+  Bias:             -0.1420 °C
+  Percent Bias:     -0.73 %
 
   Observed Statistics:
-    Mean: 18.48 °C
-    Std:  6.35 °C
+    Mean: 19.57 °C
+    Std:  6.64 °C
     Min:  10.55 °C
     Max:  36.73 °C
 
   Modeled Statistics:
-    Mean: 17.36 °C
-    Std:  9.06 °C
-    Min:  5.24 °C
-    Max:  40.56 °C
+    Mean: 19.42 °C
+    Std:  8.80 °C
+    Min:  6.03 °C
+    Max:  40.27 °C
 
 Water Temperature (Surface):
   Number of points: 550
   NSE:              0.2781
-  RMSE:             5.4193 °C
-  MAE:              4.5557 °C
+  RMSE:             5.4192 °C
+  MAE:              4.5556 °C
   R²:               0.6150
-  Bias:             -2.3230 °C
-  Percent Bias:     -12.58 %
+  Bias:             -2.3229 °C
+  Percent Bias:     -12.57 %
 
   Observed Statistics:
     Mean: 18.47 °C

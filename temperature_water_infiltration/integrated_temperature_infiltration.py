@@ -258,6 +258,12 @@ def run_integrated_model(sim_df, temp_params_file, wf_params_file,
     # Initialize water temperature (carry forward between timesteps)
     T_water_infil_prev = np.nan
 
+    # Track time since last rainfall for water temperature modeling
+    # Water temperature is only calculated within 6 hours after rainfall
+    # (sensor measures bottom/outflow water, which is only relevant during active flow)
+    time_since_rain = np.inf  # Start with infinite time (no recent rain)
+    max_water_temp_hours = 6.0  # Maximum hours after rain to model water temperature
+
     # Time integration loop
     for n in range(n_steps):
         # Extract meteorological data
@@ -369,9 +375,16 @@ def run_integrated_model(sim_df, temp_params_file, wf_params_file,
         T_water_runoff = np.nan
         T_water_infil = np.nan
 
+        # Update time since last rainfall
+        if rainfall_clean > 0:
+            time_since_rain = 0.0  # Reset counter at rainfall
+        else:
+            time_since_rain += dt / 3600.0  # Increment by dt in hours
+
         # Determine if we should calculate water temperature
-        # Calculate when: (1) there's rainfall, OR (2) there's water in saturated zone, OR (3) there's pipe outflow
-        has_water = rainfall_clean > 0 or hsz_prev > 0 or qpipe_prev > 0
+        # Only calculate within max_water_temp_hours after rainfall (sensor measures outflow water)
+        # Calculate when: (1) there's rainfall, OR (2) within time window and has water
+        has_water = rainfall_clean > 0 or (time_since_rain <= max_water_temp_hours and (hsz_prev > 0 or qpipe_prev > 0))
 
         if has_water:
             # Start rain event tracking if rainfall is active
@@ -396,41 +409,70 @@ def run_integrated_model(sim_df, temp_params_file, wf_params_file,
 
             # STAGE 2: Infiltration/stored water heat exchange (if permeable and has water)
             if phi != 0 and (rainfall_clean > 0 or hsz_prev > 0):
-                if rainfall_clean > 0:
-                    infiltration_depth = rainfall_clean  # Assume all rainfall infiltrates
-                else:
-                    # Use saturated zone depth as proxy for water volume when no rainfall
-                    infiltration_depth = hsz_prev / 1000  # Convert from mm to m
-
-                T_dew_K = T_dew + 273.15
-
-                # Average subsurface temperature
+                # Subsurface temperature for water heat exchange
+                # Use average of all subsurface nodes (matches well with observations based on validation)
                 T_sub_K = T[1:].mean() + 273.15
+                T_sub = T_sub_K - 273.15  # Also keep in Celsius for equilibration
 
-                # Input water temperature for infiltration
                 if rainfall_clean > 0:
+                    # === ACTIVE INFILTRATION: Use advection-based heat transfer ===
+                    infiltration_depth = rainfall_clean  # Assume all rainfall infiltrates
+                    T_dew_K = T_dew + 273.15
+
+                    # Input water temperature for infiltration
                     # Use surface-heated water temp if available, otherwise dew point
                     T_water_in_K = (T_water_runoff + 273.15
                                     if not np.isnan(T_water_runoff)
                                     else T_dew_K)
-                else:
-                    # For stored water, use previous water temperature or subsurface temp
-                    if not np.isnan(T_water_infil_prev):
-                        T_water_in_K = T_water_infil_prev + 273.15
-                    else:
-                        T_water_in_K = T_sub_K
 
-                h_infil, T_water_infil_K = calculate_h_infiltration(
-                    dt,
-                    infiltration_depth,
-                    T_sub_K,
-                    T_water_in_K,
-                    rho[1] * c[1],  # sub-surface volumetric heat capacity
-                    rho_water,
-                    cp_water,
-                    lam[1]  # sub-surface thermal conductivity
-                )
-                T_water_infil = T_water_infil_K - 273.15
+                    h_infil, T_water_infil_K = calculate_h_infiltration(
+                        dt,
+                        infiltration_depth,
+                        T_sub_K,
+                        T_water_in_K,
+                        rho[1] * c[1],  # sub-surface volumetric heat capacity
+                        rho_water,
+                        cp_water,
+                        lam[1]  # sub-surface thermal conductivity
+                    )
+                    T_water_infil = T_water_infil_K - 273.15
+
+                else:
+                    # === STORED WATER: Use thermal equilibration model ===
+                    # Water is sitting in the saturated zone, gradually equilibrating
+                    # with the surrounding pavement temperature via conduction
+
+                    # Equilibration time constant (seconds) - controls how fast water
+                    # temperature approaches subsurface temperature
+                    # Shorter tau = faster equilibration (less thermal mass/insulation)
+                    # Typical range: 1800-7200 seconds (30 min - 2 hours)
+                    # Based on validation, use faster equilibration to track subsurface better
+                    tau_equilibration = 7200.0  # 2 hours - can be made a calibration parameter
+
+                    # Calculate equilibration coefficient (exponential decay)
+                    alpha_eq = 1.0 - np.exp(-dt / tau_equilibration)
+
+                    # Get previous water temperature
+                    if not np.isnan(T_water_infil_prev):
+                        T_water_prev = T_water_infil_prev
+                    else:
+                        # Initialize to subsurface temperature if no previous value
+                        T_water_prev = T_sub
+
+                    # Exponential approach to subsurface temperature
+                    # T_new = T_old + alpha * (T_target - T_old)
+                    T_water_infil = T_water_prev + alpha_eq * (T_sub - T_water_prev)
+
+                    # Calculate heat flux for energy balance (W/m²)
+                    # Heat transferred from pavement to water (or vice versa)
+                    # This is a conductive flux, not advective like h_infil
+                    delta_T = T_water_infil - T_water_prev
+                    water_volume_per_area = hsz_prev / 1000.0 * phi  # m³/m² (depth * porosity)
+                    water_mass_per_area = water_volume_per_area * rho_water  # kg/m²
+                    h_infil = water_mass_per_area * cp_water * delta_T / dt
+
+                    # Note: This h_infil represents conductive equilibration,
+                    # not infiltration heat flux. It's the heat absorbed by stored water.
 
         else:
             rain_event_active = False

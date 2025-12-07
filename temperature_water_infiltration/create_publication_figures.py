@@ -26,12 +26,16 @@ import integrated_temperature_infiltration as itm
 
 
 # Event dates for specific plots (from original output/pavements/)
+# EVENT_DATES = {
+#     'event1': ('2023-10-05 05:00', '2023-10-06 05:00'),
+#     'event2': ('2023-11-09 21:00', '2023-11-10 15:00'),
+#     'event3': ('2024-01-21 05:00', '2024-01-23 08:00'),
+#     'event4': ('2024-01-31 22:00', '2024-02-03 10:00'),
+#     'event5': ('2024-04-28 04:00', '2024-04-29 04:00'),
+# }
+
 EVENT_DATES = {
-    'event1': ('2023-10-05 05:00', '2023-10-06 05:00'),
-    'event2': ('2023-11-09 21:00', '2023-11-10 15:00'),
-    'event3': ('2024-01-21 05:00', '2024-01-23 08:00'),
-    'event4': ('2024-01-31 22:00', '2024-02-03 16:00'),
-    'event5': ('2024-04-28 04:00', '2024-04-29 04:00'),
+    'event4': ('2024-01-31 22:00', '2024-02-03 10:00'),
 }
 
 # Color mapping for pavements (from original code)
@@ -52,25 +56,32 @@ PAVEMENT_NAMES = {
     "PGr": "Permeable Gravel"
 }
 
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import pandas as pd
+
 
 def plot_event_for_pavement(combined_df, start_date, end_date, pavement_type="PICP",
-                             y_min=None, y_max=None, save_path=None):
+                            y_min=None, y_max=None, save_path=None):
     """
     Plot three-panel event figure with rainfall, surface temperature, and water temperature.
-    Adapted from water_temperature_evaluate.py:plot_event_data_with_model()
 
-    This matches the style of the original output/PGr/ plots with:
-    - Panel 1: Rainfall (inverted y-axis) with total rainfall annotation
-    - Panel 2: Surface temperature (observed vs modeled)
-    - Panel 3: Water temperature (observed vs modeled) with y-axis starting from 0
+    Adjustments made:
+    - X-axis format: YYYY-Mon-DD
+    - X-axis ticks: Multiples of 0, 6, 12, 18 hours.
+    - Date Placement: First date left-aligned to Y-axis; subsequent dates centered on 00:00.
     """
     # Set font sizes
-    TITLE_SIZE = 16
-    LABEL_SIZE = 16
-    LEGEND_SIZE = 16
-    TICK_SIZE = 14
+    TITLE_SIZE = 20
+    LABEL_SIZE = 18
+    LEGEND_SIZE = 18
+    TICK_SIZE = 18
 
-    pavement_full_name = PAVEMENT_NAMES.get(pavement_type, pavement_type)
+    # Handle global variable dependency safely
+    try:
+        pavement_full_name = PAVEMENT_NAMES.get(pavement_type, pavement_type)
+    except NameError:
+        pavement_full_name = pavement_type
 
     # Ensure date column is datetime
     if combined_df['date'].dtype != 'datetime64[ns]':
@@ -109,7 +120,7 @@ def plot_event_for_pavement(combined_df, start_date, end_date, pavement_type="PI
 
         # Add total rainfall annotation
         axs[0].annotate(f'Total: {total_rain:.1f} mm',
-                        xy=(0.95, 0.8), xycoords='axes fraction',
+                        xy=(0.99, 0.55), xycoords='axes fraction',
                         ha='right', va='top', fontsize=16, fontweight='bold',
                         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", alpha=0.7))
 
@@ -129,18 +140,15 @@ def plot_event_for_pavement(combined_df, start_date, end_date, pavement_type="PI
     axs[1].grid(True, linestyle='--', alpha=0.7)
     axs[1].legend(loc='best', fontsize=LEGEND_SIZE)
     axs[1].tick_params(axis='both', which='major', labelsize=TICK_SIZE)
-    axs[1].yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1f}'))
+    axs[1].yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.0f}'))
 
     # --- Panel 3: Water Temperature subplot ---
-    # Get observed water temperature data, dropping NaN values
     water_data = []
     if 'WaterTemperature' in event_data.columns:
         observed_water_data = event_data[['date', 'WaterTemperature']].dropna()
 
-        # Calculate average temperatures for legend
         if not observed_water_data.empty:
-            observed_avg = observed_water_data['WaterTemperature'].mean()
-            water_obs_label = f'Observed Water (Avg: {observed_avg:.2f}°C)'
+            water_obs_label = f'Observed Water'
             axs[2].plot(observed_water_data['date'], observed_water_data['WaterTemperature'],
                         color='blue', linestyle='-', linewidth=2, label=water_obs_label)
 
@@ -151,49 +159,73 @@ def plot_event_for_pavement(combined_df, start_date, end_date, pavement_type="PI
                 common_dates = observed_water_data['date']
                 filtered_results = event_data[event_data['date'].isin(common_dates)]
 
-                if not filtered_results.empty and 'water_temp_infil' in filtered_results.columns:
-                    model_avg = filtered_results['water_temp_infil'].mean()
-                    water_model_label = f'Modeled Water (Avg: {model_avg:.2f}°C)'
+                if not filtered_results.empty:
+                    water_model_label = f'Modeled Water'
                     axs[2].plot(filtered_results['date'], filtered_results['water_temp_infil'],
                                 color='blue', linestyle='--', linewidth=2, label=water_model_label)
-
                     water_data.extend(filtered_results['water_temp_infil'].tolist())
 
     # Calculate y-axis limits for water temperature subplot
-    # Set y-axis to start from 0
     min_temp = 0
     max_temp = max(water_data) if water_data else 40
-
-    # Add padding to max
-    y_min = min_temp
-    y_max = max_temp + 15
-
-    # Explicitly set y-axis limits
-    axs[2].set_ylim(y_min, y_max)
+    y_min_calc = min_temp
+    y_max_calc = max_temp + 15
+    axs[2].set_ylim(y_min_calc, y_max_calc)
 
     axs[2].set_ylabel('Temperature (°C)', fontsize=LABEL_SIZE)
     axs[2].set_title('Water Temperature', fontsize=TITLE_SIZE)
     axs[2].grid(True, linestyle='--', alpha=0.7)
     axs[2].legend(loc='best', fontsize=LEGEND_SIZE)
-    axs[2].tick_params(axis='both', which='major', labelsize=TICK_SIZE)
-    axs[2].yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1f}'))
+    axs[2].yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.0f}'))
 
-    # Format x-axis
-    axs[2].xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M'))
+    import matplotlib.dates as mdates
 
-    # Adjust x-axis tick locator based on event duration
-    days_in_event = (end_date - start_date).days
-    if days_in_event <= 2:
-        axs[2].xaxis.set_major_locator(mdates.HourLocator(interval=6))  # Every 6 hours for short events
-    else:
-        axs[2].xaxis.set_major_locator(mdates.DayLocator())  # Daily for longer events
+    # X-limits (use the same start/end you used for filtering)
+    axs[2].set_xlim(start_date, end_date)
 
-    plt.xticks(rotation=0, fontsize=TICK_SIZE)
+    # Major ticks at 0, 6, 12, 18 hours
+    locator = mdates.HourLocator(byhour=[0, 6, 12, 18])
+    formatter = mdates.DateFormatter('%H')
+    axs[2].xaxis.set_major_locator(locator)
+    axs[2].xaxis.set_major_formatter(formatter)
+    axs[2].tick_params(axis='x', which='major', labelsize=TICK_SIZE)
+    axs[2].tick_params(axis='y', which='major', labelsize=TICK_SIZE)
 
-    # Overall title
-    plt.suptitle(
-        f'Event {start_date.strftime("%Y-%m-%d")}',
-        fontsize=16, y=0.995)
+    # ---- Custom date labels ----
+    DATE_SIZE = TICK_SIZE - 2           # slightly smaller than hour ticks
+    date_y_pos = -0.18                  # vertical offset below hour labels
+    date_fmt = '%Y-%b-%d'               # e.g. 2024-Feb-02
+
+    # 1) First date: aligned with the Y-axis (left border)
+    x_min, x_max = axs[2].get_xlim()
+    first_date_dt = mdates.num2date(x_min)
+    first_date_text = first_date_dt.strftime(date_fmt)
+
+    axs[2].text(
+        x_min, date_y_pos, first_date_text,
+        ha='left', va='top',
+        fontsize=DATE_SIZE,
+        transform=axs[2].get_xaxis_transform()
+    )
+
+    # 2) Subsequent dates: under every tick at hour 00
+    xticks = axs[2].get_xticks()
+    for tick in xticks:
+        # skip ticks at or before the left border (so we don't duplicate the first date)
+        if tick <= x_min:
+            continue
+
+        dt = mdates.num2date(tick)
+        if dt.hour == 0:
+            label = dt.strftime(date_fmt)
+            axs[2].text(
+                tick, date_y_pos, label,
+                ha='center', va='top',
+                fontsize=DATE_SIZE,
+                transform=axs[2].get_xaxis_transform()
+            )
+
+    axs[2].set_xlabel('Time (Hours)', fontsize=LABEL_SIZE)
 
     plt.tight_layout()
 
@@ -228,11 +260,11 @@ def plot_all_pavements_comparison(observed_data_dict, model_results_dict, start_
     pavements = ['CP', 'PICP', 'PGr', 'PA', 'PC']
 
     # ========== FONT SIZE SETTINGS (adjust here for all text elements) ==========
-    SUBPLOT_TITLE_SIZE = 20       # Size of pavement name titles (e.g., "Conventional Pavement")
-    AXIS_LABEL_SIZE = 18          # Size of axis labels (e.g., "Date", "Temperature (°C)")
-    TICK_LABEL_SIZE = 16          # Size of tick labels (numbers on axes)
-    LEGEND_SIZE = 16              # Size of legend text
-    RMSE_ANNOTATION_SIZE = 16     # Size of RMSE text annotation
+    SUBPLOT_TITLE_SIZE = 22       # Size of pavement name titles (e.g., "Conventional Pavement")
+    AXIS_LABEL_SIZE = 20          # Size of axis labels (e.g., "Date", "Temperature (°C)")
+    TICK_LABEL_SIZE = 18          # Size of tick labels (numbers on axes)
+    LEGEND_SIZE = 18              # Size of legend text
+    RMSE_ANNOTATION_SIZE = 18     # Size of RMSE text annotation
     # ===========================================================================
 
     # Create figure with subplots
@@ -390,15 +422,17 @@ def main(pavements=['PICP', 'PGr', 'PA', 'PC', 'CP']):
     # Create output directories
     events_dir = os.path.join(output_base, "event_plots")
     comparison_dir = os.path.join(output_base, "pavement_comparison_plots")
+    model_cache_dir = os.path.join(output_base, "model_results")
     os.makedirs(events_dir, exist_ok=True)
     os.makedirs(comparison_dir, exist_ok=True)
+    os.makedirs(model_cache_dir, exist_ok=True)
 
     # Dictionaries to store results
     observed_data_dict = {}
     model_results_dict = {}
 
     print("\n" + "-" * 80)
-    print("STEP 1: Running models for all pavements")
+    print("STEP 1: Loading/Running models for all pavements")
     print("-" * 80)
 
     # Run models for all pavements
@@ -426,7 +460,21 @@ def main(pavements=['PICP', 'PGr', 'PA', 'PC', 'CP']):
         observed_data_dict[pavement] = obs_df
         print(f"  Loaded {len(obs_df)} timesteps of observed data")
 
-        # Run integrated model
+        # Check for cached model results
+        cache_file = os.path.join(model_cache_dir, f"{pavement}_model_results.csv")
+
+        if os.path.exists(cache_file):
+            print(f"  Found cached model results at: {cache_file}")
+            try:
+                results_df = pd.read_csv(cache_file, parse_dates=['date'])
+                model_results_dict[pavement] = results_df
+                print(f"  Loaded {len(results_df)} timesteps from cache")
+                continue
+            except Exception as e:
+                print(f"  Warning: Could not load cached results ({e}), will re-run model")
+
+        # Run integrated model if no cache exists or cache failed to load
+        print(f"  No cache found, running model...")
         try:
             results_df, water_flow_df = itm.run_integrated_model(
                 sim_df=obs_df,
@@ -438,6 +486,13 @@ def main(pavements=['PICP', 'PGr', 'PA', 'PC', 'CP']):
             )
             model_results_dict[pavement] = results_df
             print(f"  Model run completed successfully")
+
+            # Save results to cache
+            try:
+                results_df.to_csv(cache_file, index=False)
+                print(f"  Saved results to cache: {cache_file}")
+            except Exception as e:
+                print(f"  Warning: Could not save cache ({e}), continuing anyway")
 
         except Exception as e:
             print(f"  ERROR running model for {pavement}: {e}")
